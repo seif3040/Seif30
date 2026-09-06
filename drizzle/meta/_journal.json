@@ -1,0 +1,97 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1786577154158,
+      "tag": "0000_yielding_proteus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1786577376640,
+      "tag": "0001_fluffy_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786577873566,
+      "tag": "0002_confused_miek",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786578555354,
+      "tag": "0003_curvy_king_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786626699571,
+      "tag": "0004_windy_the_spike",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787014995177,
+      "tag": "0005_yummy_kinsey_walden",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787015657864,
+      "tag": "0006_perfect_mordo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787043959623,
+      "tag": "0007_sticky_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787045839589,
+      "tag": "0008_salty_hedge_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787046213648,
+      "tag": "0009_thankful_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1787172506069,
+      "tag": "0010_elite_mentallo",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1787362411580,
+      "tag": "0011_messy_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1787402305302,
+      "tag": "0012_gifted_paibok",
+      "breakpoints": true
+    }
+  ]
+}

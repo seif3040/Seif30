@@ -1,0 +1,6 @@
+{
+  "name": "Seif Study OS",
+  "description": "منصة دراسية ذكية وشاملة لإدارة المذاكرة، المهام، بطاقات الاستذكار، الاختبارات، وجلسات التركيز.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
