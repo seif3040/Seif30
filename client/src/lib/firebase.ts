@@ -27,7 +27,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { useEffect, useState } from "react";
-import config from "../../../firebase-applet-config.json";
+import config from "../firebase-config.json";
 
 const firebaseConfig = {
   apiKey: config.apiKey,
