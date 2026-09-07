@@ -35,18 +35,22 @@ export function useAuth(options?: UseAuthOptions) {
         error instanceof TRPCClientError &&
         error.data?.code === "UNAUTHORIZED"
       ) {
-        return;
+        // expected if session expired
+      } else {
+        console.warn("Logout error:", error);
       }
-      throw error;
     } finally {
-      // Clear the Preview auto-login token mirrored into sessionStorage, so
-      // header-based sessions (Safari ITP / WebView) are logged out too. The
-      // backend cookie is cleared by the logout mutation.
       try {
+        await fetch("/api/private-auth/sign-out", { method: "POST" });
+      } catch {}
+      try {
+        localStorage.removeItem("seif_private_token");
+        sessionStorage.removeItem("seif_private_token");
         sessionStorage.removeItem("manus-cookie");
       } catch {}
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
+      window.location.reload();
     }
   }, [logoutMutation, utils]);
 

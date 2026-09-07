@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { useFirebaseUser } from "@/lib/firebase";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { GoogleKeepExporter } from "@/components/GoogleKeepExporter";
 import {
   ExternalLink,
   Sparkles,
@@ -93,6 +94,9 @@ export default function Notebooks() {
           </div>
         </div>
       </section>
+
+      {/* Google Keep Exporter Component */}
+      <GoogleKeepExporter />
 
       {/* Feature Grid */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

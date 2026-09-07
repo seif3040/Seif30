@@ -39,11 +39,21 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   startLogin();
 };
 
+if (import.meta.env.DEV && typeof window !== "undefined" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
-    console.error("[API Query Error]", error);
+    if (!Boolean((error as any)?.message?.toLowerCase().includes("fetch"))) {
+      console.error("[API Query Error]", error);
+    }
   }
 });
 
@@ -61,24 +71,28 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson as any,
       headers() {
-        // Preview auto-login fallback: when the browser blocks iframe cookies
-        // (Safari ITP / private browsing / WebView), the runtime mirrors the
-        // session into sessionStorage so we can forward it as a Bearer token.
-        // The regular OAuth cookie flow keeps working and takes priority server-side.
+        const h: Record<string, string> = {};
         try {
+          const privateToken = localStorage.getItem("seif_private_token") || sessionStorage.getItem("seif_private_token");
+          if (privateToken) {
+            h["Authorization"] = `Bearer ${privateToken}`;
+            h["x-private-session"] = privateToken;
+            return h;
+          }
           const raw = sessionStorage.getItem("manus-cookie");
           if (raw) {
             const prefix = `${COOKIE_NAME}=`;
             const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
             const token = pair?.trim().slice(prefix.length);
             if (token) {
-              return { Authorization: `Bearer ${token}` };
+              h["Authorization"] = `Bearer ${token}`;
+              return h;
             }
           }
         } catch {
-          // sessionStorage unavailable
+          // storage unavailable
         }
-        return {};
+        return h;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {

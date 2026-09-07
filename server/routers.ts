@@ -80,12 +80,35 @@ export const appRouter = router({
     complete: protectedProcedure.input(z.object({ sessionId: id })).mutation(({ ctx, input }) => db.completePomodoro(ctx.user.id, input.sessionId)),
   }),
   studySearch: router({ query: protectedProcedure.input(z.object({ query: z.string().trim().min(1).max(120) })).query(({ ctx, input }) => db.searchStudyWorkspace(ctx.user.id, input.query)) }),
+  studyCoach: router({
+    getInsights: protectedProcedure.query(({ ctx }) => db.getAIStudyCoachInsights(ctx.user.id)),
+  }),
   flashcards: router({
     list: protectedProcedure.query(({ ctx }) => db.listFlashcardDecks(ctx.user.id)),
     createDeck: protectedProcedure.input(z.object({ title: z.string().trim().min(1).max(180), description: z.string().max(4000).optional(), color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional() })).mutation(({ ctx, input }) => db.createFlashcardDeck(ctx.user.id, input)),
     create: protectedProcedure.input(z.object({ deckId: id, prompt: z.string().trim().min(1).max(10000), answer: z.string().trim().min(1).max(10000) })).mutation(({ ctx, input }) => db.createFlashcard(ctx.user.id, input)),
     review: protectedProcedure.input(z.object({ cardId: id, result: z.enum(["again", "good", "mastered"]) })).mutation(({ ctx, input }) => db.reviewFlashcard(ctx.user.id, input.cardId, input.result)),
     delete: protectedProcedure.input(z.object({ cardId: id })).mutation(({ ctx, input }) => db.deleteFlashcard(ctx.user.id, input.cardId)),
+    generatePdfFlashcards: protectedProcedure
+      .input(
+        z.object({
+          fileName: z.string().trim().min(1).max(320),
+          fileBase64: z.string().optional(),
+          rawText: z.string().optional(),
+          subject: z.string().optional(),
+          customPrompt: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.generatePdfFlashcardsAI(ctx.user.id, input)),
+    savePdfFlashcards: protectedProcedure
+      .input(
+        z.object({
+          deckTitle: z.string().trim().min(1).max(180),
+          description: z.string().optional(),
+          cards: z.array(z.object({ prompt: z.string(), answer: z.string() })).min(1).max(50),
+        })
+      )
+      .mutation(({ ctx, input }) => db.savePdfFlashcardsToDeck(ctx.user.id, input)),
   }),
   video: router({
     current: protectedProcedure.query(({ ctx }) => db.currentVideoSession(ctx.user.id)),
@@ -126,6 +149,7 @@ export const appRouter = router({
     createQuiz: protectedProcedure.input(z.object({ notebookId: id })).mutation(({ ctx, input }) => db.createNotebookQuiz(ctx.user.id, input.notebookId)),
     markQuizReviewed: protectedProcedure.input(z.object({ examId: id })).mutation(({ ctx, input }) => db.markNotebookQuizReviewed(ctx.user.id, input.examId)),
     ai: protectedProcedure.input(z.object({ notebookId: id, mode: z.enum(["question", "summary", "quiz", "explain"]), prompt: z.string().trim().max(2000).optional() })).mutation(({ ctx, input }) => db.notebookAI(ctx.user.id, input)),
+    exportAllNotes: protectedProcedure.query(({ ctx }) => db.exportAllUserNotes(ctx.user.id)),
   }),
   calendar: router({
     list: protectedProcedure.input(z.object({ from: date, to: date })).query(({ ctx, input }) => db.listCalendar(ctx.user.id, input.from, input.to)),
@@ -135,6 +159,280 @@ export const appRouter = router({
   achievements: router({ list: protectedProcedure.query(({ ctx }) => db.listAchievements(ctx.user.id)) }),
   coins: router({ ledger: protectedProcedure.query(({ ctx }) => db.coinLedger(ctx.user.id)) }),
   analytics: router({ overview: protectedProcedure.query(({ ctx }) => db.analytics(ctx.user.id)) }),
+  mistakes: router({
+    list: protectedProcedure.query(({ ctx }) => db.listMistakes(ctx.user.id)),
+    create: protectedProcedure.input(z.object({ subject: z.string().trim().min(1).max(80), topic: z.string().trim().max(180).optional(), errorType: z.string().trim().min(1).max(80), question: z.string().trim().min(1).max(5000), wrongAnswer: z.string().trim().max(5000).optional(), correctAnswer: z.string().trim().min(1).max(5000), explanation: z.string().trim().max(5000).optional() })).mutation(({ ctx, input }) => db.createMistake(ctx.user.id, input)),
+    updateStatus: protectedProcedure.input(z.object({ mistakeId: id, status: z.enum(["needs_review", "reviewed", "mastered"]) })).mutation(({ ctx, input }) => db.updateMistakeStatus(ctx.user.id, input.mistakeId, input.status)),
+    delete: protectedProcedure.input(z.object({ mistakeId: id })).mutation(({ ctx, input }) => db.deleteMistake(ctx.user.id, input.mistakeId)),
+    analyzeAI: protectedProcedure.mutation(({ ctx }) => db.analyzeMistakesAI(ctx.user.id)),
+  }),
+  feynman: router({
+    list: protectedProcedure.query(({ ctx }) => db.listFeynmanSessions(ctx.user.id)),
+    evaluateAI: protectedProcedure.input(z.object({ topic: z.string().trim().min(1).max(200), subject: z.string().trim().min(1).max(80), userExplanation: z.string().trim().min(5).max(10000) })).mutation(({ ctx, input }) => db.evaluateFeynmanAI(ctx.user.id, input)),
+  }),
+  quizGenerator: router({
+    generate: protectedProcedure.input(z.object({ subject: z.string().trim().min(1).max(80), topicText: z.string().trim().min(10).max(15000), difficulty: z.enum(["easy", "medium", "hard"]), questionCount: z.number().int().min(3).max(20) })).mutation(({ ctx, input }) => db.generateQuizAI(ctx.user.id, input)),
+    submit: protectedProcedure.input(z.object({ title: z.string().trim().min(1).max(200), totalQuestions: z.number().int().min(1).max(100), correctAnswers: z.number().int().min(0).max(100), difficulty: z.enum(["easy", "medium", "hard"]) })).mutation(({ ctx, input }) => db.submitQuizResults(ctx.user.id, input)),
+  }),
+  summarizer: router({
+    summarizeAI: protectedProcedure.input(z.object({ title: z.string().trim().min(1).max(200), contentText: z.string().trim().max(20000), imageBase64: z.string().optional() })).mutation(({ ctx, input }) => db.summarizePageAI(ctx.user.id, input)),
+  }),
+  dailyChallenge: router({
+    get: protectedProcedure.query(({ ctx }) => db.getDailyChallenge(ctx.user.id)),
+  }),
+  mindMap: router({
+    generateAI: protectedProcedure.input(z.object({ topic: z.string().trim().min(1).max(200), subject: z.string().trim().min(1).max(80) })).mutation(({ ctx, input }) => db.generateMindMapAI(ctx.user.id, input)),
+  }),
+  decomposer: router({
+    decomposeAI: protectedProcedure.input(z.object({ bigTaskTitle: z.string().trim().min(1).max(200), detailsText: z.string().trim().max(5000).optional() })).mutation(({ ctx, input }) => db.decomposeTaskAI(ctx.user.id, input)),
+  }),
+  hybridHub: router({
+    list: protectedProcedure.query(({ ctx }) => db.listHybridLessons(ctx.user.id)),
+    create: protectedProcedure
+      .input(
+        z.object({
+          subject: z.string().trim().min(1).max(80),
+          teacherName: z.string().trim().min(1).max(100),
+          mode: z.enum(["online", "center", "hybrid"]),
+          platformOrCenter: z.string().trim().min(1).max(120),
+          lectureTitle: z.string().trim().min(1).max(200),
+          onlineUrl: z.string().trim().max(1000).optional(),
+          accessCode: z.string().trim().max(100).optional(),
+          expiryDate: z.string().trim().max(50).optional(),
+          centerTime: z.string().trim().max(100).optional(),
+          notes: z.string().trim().max(2000).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.createHybridLesson(ctx.user.id, input)),
+    updateStatus: protectedProcedure
+      .input(
+        z.object({
+          lessonId: z.number().int(),
+          status: z.enum(["pending", "watched", "attended", "completed"]).optional(),
+          sheetStatus: z.enum(["pending", "submitted", "corrected"]).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.updateHybridLessonStatus(ctx.user.id, input.lessonId, input)),
+    delete: protectedProcedure
+      .input(z.object({ lessonId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteHybridLesson(ctx.user.id, input.lessonId)),
+  }),
+  deepWork: router({
+    completeSession: protectedProcedure
+      .input(z.object({ durationMinutes: z.number().min(1).max(300), subject: z.string().optional() }))
+      .mutation(({ ctx, input }) => db.completeDeepWorkSession(ctx.user.id, input)),
+  }),
+  mistakeQuiz: router({
+    generateAI: protectedProcedure
+      .input(z.object({ subject: z.string().optional() }))
+      .mutation(({ ctx, input }) => db.generateMistakeQuizAI(ctx.user.id, input)),
+  }),
+  customRewards: router({
+    list: protectedProcedure.query(({ ctx }) => db.listCustomRewards(ctx.user.id)),
+    create: protectedProcedure
+      .input(z.object({ title: z.string().trim().min(1).max(100), cost: z.number().int().min(1).max(10000), icon: z.string().optional() }))
+      .mutation(({ ctx, input }) => db.createCustomReward(ctx.user.id, input)),
+    delete: protectedProcedure
+      .input(z.object({ rewardId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteCustomReward(ctx.user.id, input.rewardId)),
+  }),
+  smartDayPlanner: router({
+    generateAI: protectedProcedure
+      .input(
+        z.object({
+          wakeTime: z.string(),
+          centerDetails: z.string().optional(),
+          travelMinutes: z.number().optional(),
+          onlinePlatformsList: z.string().optional(),
+          targetSubjects: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.generateSmartDayPlanAI(ctx.user.id, input)),
+  }),
+  resourceBridge: router({
+    list: protectedProcedure.query(({ ctx }) => db.listExternalResources(ctx.user.id)),
+    addAI: protectedProcedure
+      .input(
+        z.object({
+          url: z.string().trim().min(1).max(2000),
+          customTitle: z.string().trim().max(200).optional(),
+          subject: z.string().trim().max(100).optional(),
+          totalMinutes: z.number().int().min(1).max(10000).optional(),
+          platform: z.string().trim().max(100).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.addExternalResourceAI(ctx.user.id, input)),
+    updateProgress: protectedProcedure
+      .input(
+        z.object({
+          resourceId: z.number().int(),
+          completedMinutes: z.number().int().min(0),
+          notes: z.string().trim().max(2000).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.updateResourceProgress(ctx.user.id, input.resourceId, input)),
+    delete: protectedProcedure
+      .input(z.object({ resourceId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteExternalResource(ctx.user.id, input.resourceId)),
+    addBookmark: protectedProcedure
+      .input(
+        z.object({
+          resourceId: z.number().int(),
+          timestampStr: z.string().trim().min(1).max(50),
+          title: z.string().trim().min(1).max(200),
+          note: z.string().trim().max(1000).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.addResourceBookmark(ctx.user.id, input.resourceId, input)),
+    deleteBookmark: protectedProcedure
+      .input(z.object({ bookmarkId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteResourceBookmark(ctx.user.id, input.bookmarkId)),
+    logFocusSession: protectedProcedure
+      .input(
+        z.object({
+          resourceId: z.number().int(),
+          durationMinutes: z.number().int().min(1).max(1000),
+          sessionNotes: z.string().trim().max(1000).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.logResourceFocusSession(ctx.user.id, input)),
+    listFocusSessions: protectedProcedure.query(({ ctx }) => db.listResourceFocusSessions(ctx.user.id)),
+    uploadPdf: protectedProcedure
+      .input(
+        z.object({
+          resourceId: z.number().int().optional(),
+          fileName: z.string().trim().min(1).max(300),
+          fileUrl: z.string().trim().optional(),
+          subject: z.string().trim().optional(),
+          fileBase64: z.string().optional(),
+          rawText: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.processAndAddPdfResource(ctx.user.id, input)),
+    listPdfs: protectedProcedure
+      .input(z.object({ resourceId: z.number().int().optional() }).optional())
+      .query(({ ctx, input }) => db.listResourcePdfs(ctx.user.id, input?.resourceId)),
+    searchPdfs: protectedProcedure
+      .input(z.object({ query: z.string().trim() }))
+      .query(({ ctx, input }) => db.searchResourcePdfs(ctx.user.id, input.query)),
+    summarizePdf: protectedProcedure
+      .input(
+        z.object({
+          pdfId: z.number().int(),
+          customPrompt: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.summarizePdfAI(ctx.user.id, input.pdfId, input.customPrompt)),
+    deletePdf: protectedProcedure
+      .input(z.object({ pdfId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteResourcePdf(ctx.user.id, input.pdfId)),
+  }),
+  smartCalendar: router({
+    getData: protectedProcedure
+      .input(z.object({ dateStr: z.string().optional() }).optional())
+      .query(({ ctx, input }) => db.getSmartCalendarData(ctx.user.id, input?.dateStr)),
+    addEvent: protectedProcedure
+      .input(
+        z.object({
+          title: z.string().trim().min(1).max(300),
+          category: z.string().default("lesson"),
+          sourceType: z.string().optional(),
+          sourceId: z.number().int().optional(),
+          eventDate: z.string(),
+          startTime: z.string(),
+          durationMinutes: z.number().int().optional(),
+          subject: z.string().optional(),
+          platform: z.string().optional(),
+          linkUrl: z.string().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.addSmartCalendarEvent(ctx.user.id, input)),
+    toggleEvent: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ ctx, input }) => db.toggleSmartCalendarEvent(ctx.user.id, input.id)),
+    deleteEvent: protectedProcedure
+      .input(z.object({ id: z.number().int() }))
+      .mutation(({ ctx, input }) => db.deleteSmartCalendarEvent(ctx.user.id, input.id)),
+    generateAIRoadmap: protectedProcedure
+      .input(
+        z.object({
+          eventDate: z.string(),
+          availableMinutes: z.number().int().optional(),
+          preferences: z.string().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.generateSmartCalendarRoadmapAI(ctx.user.id, input)),
+    syncToGoogle: protectedProcedure
+      .input(z.object({ accessToken: z.string() }))
+      .mutation(({ ctx, input }) => db.syncToGoogleCalendar(ctx.user.id, input.accessToken)),
+    syncFromGoogle: protectedProcedure
+      .input(z.object({ accessToken: z.string() }))
+      .mutation(({ ctx, input }) => db.syncFromGoogleCalendar(ctx.user.id, input.accessToken)),
+    fullBiDirectionalSync: protectedProcedure
+      .input(z.object({ accessToken: z.string() }))
+      .mutation(({ ctx, input }) => db.fullGoogleCalendarBiDirectionalSync(ctx.user.id, input.accessToken)),
+  }),
+  studyRooms: router({
+    create: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().trim().min(1).max(200),
+          description: z.string().trim().max(1000).optional(),
+          customCode: z.string().trim().max(50).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.createStudyRoom(ctx.user.id, ctx.user.name || "سيف", input)),
+    join: protectedProcedure
+      .input(z.object({ roomCode: z.string().trim().min(1) }))
+      .mutation(({ ctx, input }) => db.joinStudyRoom(ctx.user.id, ctx.user.name || "سيف", input.roomCode)),
+    listUserRooms: protectedProcedure.query(({ ctx }) => db.listUserStudyRooms(ctx.user.id)),
+    getDetails: protectedProcedure
+      .input(z.object({ roomId: z.number().int() }))
+      .query(({ ctx, input }) => db.getStudyRoomDetails(ctx.user.id, input.roomId)),
+    addResource: protectedProcedure
+      .input(
+        z.object({
+          roomId: z.number().int(),
+          title: z.string().trim().min(1).max(300),
+          platform: z.string().trim().min(1).max(100),
+          url: z.string().trim().url(),
+          subject: z.string().trim().max(100).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.addStudyRoomResource(ctx.user.id, ctx.user.name || "سيف", input)),
+    updateProgress: protectedProcedure
+      .input(
+        z.object({
+          roomId: z.number().int(),
+          roomResourceId: z.number().int(),
+          progressPercent: z.number().int().min(0).max(100),
+          completedMinutes: z.number().int().min(0).optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.updateStudyRoomProgress(ctx.user.id, ctx.user.name || "سيف", input)),
+    importToBridge: protectedProcedure
+      .input(z.object({ roomResourceId: z.number().int() }))
+      .mutation(({ ctx, input }) => db.importStudyRoomResourceToBridge(ctx.user.id, input.roomResourceId)),
+  }),
+  notifications: router({
+    list: protectedProcedure.query(({ ctx }) => db.getPersonalizedNotifications(ctx.user.id)),
+    dismiss: protectedProcedure
+      .input(z.object({ key: z.string() }))
+      .mutation(({ ctx, input }) => db.dismissNotification(ctx.user.id, input.key)),
+    getSettings: protectedProcedure.query(({ ctx }) => db.getNotificationSettings(ctx.user.id)),
+    updateSettings: protectedProcedure
+      .input(
+        z.object({
+          leadMinutes: z.number().int().optional(),
+          soundEnabled: z.boolean().optional(),
+          browserPushEnabled: z.boolean().optional(),
+          antiProcrastinationMode: z.boolean().optional(),
+        })
+      )
+      .mutation(({ ctx, input }) => db.updateNotificationSettings(ctx.user.id, input)),
+    getAiCoachNudge: protectedProcedure.mutation(({ ctx }) => db.generateAIProcrastinationCoachMessage(ctx.user.id)),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

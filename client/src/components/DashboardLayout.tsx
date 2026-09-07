@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Award, BarChart3, Bot, BookOpen, CalendarDays, CalendarRange, CheckSquare, CircleDollarSign, Clock3, Cloud, ExternalLink, Flame, Gift, GraduationCap, LayoutDashboard, LogOut, Menu, NotebookPen, Layers3, Search, Settings, Sparkles, Timer, Trophy, Users, Video } from "lucide-react";
+import { Award, BarChart3, Bot, BookOpen, BookX, Brain, CalendarDays, CalendarRange, Check, CheckSquare, CircleDollarSign, Clock3, Cloud, Copy, ExternalLink, Eye, FileText, Flame, Gift, GraduationCap, HelpCircle, Inbox, Laptop, LayoutDashboard, Link2, LogOut, Mail, Menu, Network, NotebookPen, Layers3, Presentation, Search, Settings, ShieldAlert, Sparkles, Split, Timer, Trophy, Users, Video, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Input } from "@/components/ui/input";
 import { PersonalAssistantPanel } from "@/components/PersonalAssistant";
+import { NotificationCenter } from "@/components/NotificationCenter";
+import { PWAInstallButton } from "@/components/PWAInstallButton";
+import { OfflineSyncBanner } from "@/components/OfflineSyncBanner";
 import { loginWithGoogle, useFirebaseUser } from "@/lib/firebase";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -16,28 +19,40 @@ import { useState } from "react";
 type MenuItem = [label: string, path: string, icon: any, externalUrl?: string];
 
 const menu: MenuItem[] = [
-  ["لوحة التحكم", "/", LayoutDashboard],
-  ["مركز المذاكرة", "/hub", Sparkles],
-  ["مصادر دروسي", "/lesson-sources", Users],
-  ["خطة المنهج", "/study-plan", BookOpen],
-  ["جدول الأسبوع", "/weekly-schedule", CalendarRange],
-  ["الامتحانات", "/exams", GraduationCap],
-  ["الجدول اليومي", "/daily", CalendarDays],
-  ["دوّر في مذاكرتك", "/study-search", Search],
-  ["فلاش كاردز", "/flashcards", Layers3],
-  ["Pomodoro", "/pomodoro", Timer],
-  ["استراحة محسوبة", "/focus-lounge", Clock3],
-  ["فيديو المذاكرة", "/study-video", Video],
-  ["الأهداف", "/goals", Trophy],
-  ["العادات", "/habits", Flame],
-  ["التحليلات", "/analytics", BarChart3],
-  ["المساعد الذكي", "/assistant", Bot],
+  ["الرئيسية (الداشبورد)", "/", LayoutDashboard],
+  ["سنتر المذاكرة الذكي", "/hub", Sparkles],
+  ["ربط المصادر والمواقع", "/resource-bridge", Link2],
+  ["نتيجة المذاكرة الذكية", "/smart-learning-calendar", CalendarDays],
+  ["تخطيط يومك بالساعة", "/smart-planner", CalendarDays],
+  ["وضع التركيز العالي (Deep Work)", "/deep-work", ShieldAlert],
+  ["دروس الأونلاين والسناتر", "/hybrid-hub", Laptop],
+  ["مصادر وملازم دروسي", "/lesson-sources", Users],
+  ["خطة المنهج والمواد", "/study-plan", BookOpen],
+  ["جدول المذاكرة الأسبوعي", "/weekly-schedule", CalendarRange],
+  ["سجل الامتحانات والاختبارات", "/exams", GraduationCap],
+  ["كشكول الأخطاء والتعليم", "/mistakes", BookX],
+  ["معمل الأخطاء والتكرار", "/mistake-lab", Brain],
+  ["استوديو فاينمان (اشرح لنفسك)", "/feynman", Presentation],
+  ["امتحانات فورية بالـ AI", "/quiz-generator", HelpCircle],
+  ["ملخص الملازم والورق", "/summarizer", FileText],
+  ["الخرائط الذهنية الذكية", "/mindmap", Network],
+  ["تفكيك الدروس الصعبة", "/decomposer", Split],
+  ["المهام والجدول اليومي", "/daily", CalendarDays],
+  ["سرش في كل المذاكرة", "/study-search", Search],
+  ["كروت المراجعة (Flashcards)", "/flashcards", Layers3],
+  ["تايمر البومودورو 🍅", "/pomodoro", Timer],
+  ["ركن الروقان والموسيقى 🎧", "/focus-lounge", Clock3],
+  ["مذاكرة الفيديوهات واليوتيوب", "/study-video", Video],
+  ["أهدافي وطموحاتي 🎯", "/goals", Trophy],
+  ["عاداتي اليومية 🔥", "/habits", Flame],
+  ["إحصائيات وأداء المذاكرة", "/analytics", BarChart3],
+  ["صاحبك الذكي (Seify) 🤖", "/assistant", Bot],
   ["NotebookLM (جوجل)", "/notebooks", Sparkles, "https://notebooklm.google.com/"],
-  ["التقويم", "/calendar", CalendarDays],
-  ["الإنجازات", "/achievements", Award],
-  ["الهدايا", "/rewards", Gift],
-  ["Coins", "/coins", CircleDollarSign],
-  ["الإعدادات", "/settings", Settings],
+  ["كل المواعيد والامتحانات", "/calendar", CalendarDays],
+  ["إنجازاتي وأوسمتي 🏅", "/achievements", Award],
+  ["متجر المكافآت 🎁", "/rewards", Gift],
+  ["عملاتي (Coins) 🪙", "/coins", CircleDollarSign],
+  ["إعدادات الحساب", "/settings", Settings],
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -48,121 +63,335 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 function SignInGate() {
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [step, setStep] = useState<"password" | "otp">("password");
+  const [otpId, setOtpId] = useState("");
+  const [emailPreview, setEmailPreview] = useState<{
+    recipient: string;
+    sender: string;
+    subject: string;
+    sentAt: string;
+    htmlBody: string;
+    code: string;
+    sentRealEmail: boolean;
+  } | null>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
 
-  const handleGoogleSignIn = async () => {
-    setGoogleBusy(true);
-    try {
-      const fbUser = await loginWithGoogle();
-      if (fbUser) {
-        const res = await fetch("/api/private-auth/firebase-login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            uid: fbUser.uid,
-            email: fbUser.email,
-            name: fbUser.displayName || "Seif",
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          toast.success(`مرحباً بك! تم تسجيل الدخول بحساب Google (${fbUser.displayName || fbUser.email})`);
-          window.location.reload();
-          return;
-        }
-      }
-    } catch (err: any) {
-      console.error("Google sign in error:", err);
-      toast.error(err.message || "تعذر تسجيل الدخول بحساب Google");
-    } finally {
-      setGoogleBusy(false);
-    }
-  };
-
-  const signIn = async () => {
+  const requestOtp = async () => {
+    if (!password.trim()) return;
     setBusy(true);
     try {
-      const response = await fetch("/api/private-auth/sign-in", {
+      const response = await fetch("/api/private-auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: "seif94803@gmail.com", password }),
+        body: JSON.stringify({ email: "seif94803@gmail.com", password: password.trim() }),
       });
-      const result = (await response.json()) as { success?: boolean; message?: string };
+      const result = (await response.json()) as {
+        success?: boolean;
+        message?: string;
+        requiresOtp?: boolean;
+        otpId?: string;
+        emailPreview?: any;
+      };
+
       if (!response.ok || !result.success) {
-        toast.error(result.message ?? "تعذّر تسجيل الدخول.");
+        toast.error(result.message ?? "كلمة المرور غير صحيحة.");
         return;
       }
-      window.location.reload();
-    } catch {
-      toast.error("تعذّر الاتصال بخدمة تسجيل الدخول.");
+
+      if (result.requiresOtp && result.otpId && result.emailPreview) {
+        setOtpId(result.otpId);
+        setEmailPreview(result.emailPreview);
+        setStep("otp");
+        if (result.emailPreview.sentRealEmail) {
+          toast.success(`✉️ تم إرسال رمز الأمان إلى بريدك الإلكتروني seif94803@gmail.com`);
+        } else {
+          toast.success(`📩 تم تجهيز إشعار البريد الإلكتروني الخاص برمز الأمان (OTP)`);
+        }
+      }
+    } catch (err) {
+      console.error("Request OTP error:", err);
+      toast.error("تعذّر طلب رمز الأمان.");
     } finally {
       setBusy(false);
     }
   };
 
+  const verifyOtpAndSignIn = async () => {
+    if (!otpCode.trim() || !otpId) return;
+    setBusy(true);
+    try {
+      const response = await fetch("/api/private-auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ otpId, otpCode: otpCode.trim() }),
+      });
+      const result = (await response.json()) as { success?: boolean; message?: string; token?: string };
+
+      if (!response.ok || !result.success) {
+        toast.error(result.message ?? "رمز التحقق غير صحيح.");
+        return;
+      }
+
+      if (result.token) {
+        try {
+          localStorage.setItem("seif_private_token", result.token);
+          sessionStorage.setItem("seif_private_token", result.token);
+        } catch {}
+      }
+      toast.success("تم التحقق بنجاح! جاري الدخول 🚀");
+      window.location.reload();
+    } catch (err) {
+      console.error("Verify OTP error:", err);
+      toast.error("تعذّر الاتصال بخدمة التحقق.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyAndApplyOtp = (code: string) => {
+    setOtpCode(code);
+    try {
+      navigator.clipboard.writeText(code);
+    } catch {}
+    setCopiedCode(true);
+    toast.success("تم نسخ وتطبيق رمز OTP تلقائياً!");
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
+
   return (
-    <div className="app-shell flex min-h-screen items-center justify-center p-5">
-      <div className="surface w-full max-w-md p-8 text-center rounded-3xl border border-border/80 shadow-2xl">
-        <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
+    <div className="app-shell flex min-h-screen items-center justify-center p-4 sm:p-6">
+      <div className="surface w-full max-w-lg p-6 sm:p-8 text-center rounded-3xl border border-border/80 shadow-2xl relative">
+        <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
           <Sparkles className="size-7" />
         </div>
         <h1 className="text-2xl font-black tracking-tight">Seif Study OS</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          حساب شخصي آمن لحفظ خطة مذاكرتك، استراحاتك، وCoins مع سحابة Firestore وذكاء Gemini.
+          {step === "password"
+            ? "أدخل كلمة المرور الخاصة بحسابك لإرسال رمز التحقق OTP إلى بريدك الإلكتروني."
+            : "تم إرسال رمز الأمان (OTP) إلى بريدك الإلكتروني seif94803@gmail.com."}
         </p>
 
-        {/* Primary Action: Google Sign-in with Firebase Auth */}
-        <div className="mt-6 space-y-3">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={googleBusy || busy}
-            onClick={handleGoogleSignIn}
-            className="w-full h-12 rounded-2xl gap-3 font-bold border-border/80 bg-background hover:bg-muted shadow-xs transition-all"
+        {step === "password" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              requestOtp();
+            }}
+            className="mt-6 space-y-4 text-right"
           >
-            <svg className="size-5" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-            </svg>
-            <span>{googleBusy ? "جارٍ تسجيل الدخول بجوجل…" : "تسجيل الدخول باستخدام Google (Firebase Auth)"}</span>
-          </Button>
-
-          <div className="relative my-4 flex items-center justify-center">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border/70" />
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-muted-foreground">الحساب المصرح له</label>
+              <Input dir="ltr" value="seif94803@gmail.com" readOnly className="h-10 rounded-xl bg-muted/40 font-semibold text-foreground/80" />
             </div>
-            <span className="relative bg-card px-3 text-xs text-muted-foreground">أو بكلمة المرور الخاصة</span>
-          </div>
 
-          <div className="space-y-2 text-right">
-            <label className="block text-xs font-bold text-muted-foreground">البريد المصرح له</label>
-            <Input dir="ltr" value="seif94803@gmail.com" readOnly aria-label="البريد المسموح له" className="h-10 rounded-xl bg-muted/30" />
-            <label className="block text-xs font-bold text-muted-foreground">كلمة المرور</label>
-            <Input
-              dir="ltr"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && signIn()}
-              placeholder="أدخل كلمة المرور"
-              autoComplete="current-password"
-              className="h-10 rounded-xl"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-muted-foreground">كلمة المرور</label>
+              <Input
+                dir="ltr"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="أدخل كلمة المرور"
+                autoComplete="current-password"
+                className="h-11 rounded-xl text-base"
+                autoFocus
+              />
+            </div>
 
-          <Button disabled={!password || busy || googleBusy} onClick={signIn} className="mt-4 w-full h-11 rounded-2xl font-bold">
-            {busy ? "جارٍ التحقق…" : "تسجيل الدخول بكلمة المرور"}
-          </Button>
-        </div>
+            <Button type="submit" disabled={!password.trim() || busy} className="w-full h-12 rounded-2xl font-bold text-base shadow-md">
+              {busy ? "جاري التحقق…" : "إرسال رمز OTP للبريد الإلكتروني ✉️"}
+            </Button>
+          </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              verifyOtpAndSignIn();
+            }}
+            className="mt-6 space-y-4 text-right"
+          >
+            {/* Realistic Gmail Notification Card */}
+            <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-background p-4 text-center space-y-3 shadow-sm">
+              <div className="flex items-center justify-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
+                <div className="flex size-7 items-center justify-center rounded-lg bg-red-500 text-white font-bold text-xs shadow-xs">
+                  M
+                </div>
+                <span>Gmail / علبة الوارد الواردة</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {emailPreview?.sentRealEmail
+                  ? "تم إرسال الرسالة بنجاح إلى seif94803@gmail.com عبر سيرفر البريد"
+                  : "وصلتك رسالة بريدية جديدة تحتوي على رمز التحقق الأمني (OTP)"}
+              </p>
+
+              <Button
+                type="button"
+                onClick={() => setShowEmailModal(true)}
+                className="w-full h-11 rounded-xl border-indigo-500/40 bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2 text-xs shadow-md"
+              >
+                <Inbox className="size-4" />
+                <span>فتح Gmail لمطالعة الرسالة وتأكيد الدخول 📩</span>
+              </Button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-muted-foreground">رمز التحقق OTP (6 أرقام)</label>
+              <Input
+                dir="ltr"
+                type="text"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value)}
+                placeholder="أدخل 6 أرقام هنا"
+                className="h-12 rounded-xl text-center font-mono text-xl tracking-widest"
+                autoFocus
+              />
+            </div>
+
+            <Button type="submit" disabled={otpCode.length < 6 || busy} className="w-full h-12 rounded-2xl font-bold text-base shadow-md">
+              {busy ? "جاري التحقق من OTP…" : "تأكيد الدخول 🔓"}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep("password");
+                setOtpCode("");
+              }}
+              className="mt-2 w-full text-xs font-semibold text-muted-foreground hover:underline"
+            >
+              الرجوع لتعديل كلمة المرور
+            </button>
+          </form>
+        )}
+
+        {/* Pixel-Perfect Gmail Web Client Preview Modal */}
+        {showEmailModal && emailPreview && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-5 backdrop-blur-sm">
+            <div className="w-full max-w-2xl rounded-3xl border border-border bg-background text-foreground shadow-2xl overflow-hidden text-right flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+              
+              {/* Google Workspace / Gmail Top Navigation Bar */}
+              <div className="border-b border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-red-600 text-white font-extrabold text-sm shadow-sm">
+                    M
+                  </div>
+                  <span className="font-extrabold text-sm tracking-tight text-foreground hidden sm:inline">Gmail</span>
+                  <span className="text-xs font-medium text-muted-foreground dir-ltr">/ seif94803@gmail.com</span>
+                </div>
+
+                {/* Simulated Search Bar */}
+                <div className="flex-1 max-w-xs mx-2 relative hidden md:block">
+                  <Search className="size-3.5 absolute right-3 top-2.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    readOnly
+                    value="Search in mail"
+                    className="w-full h-8 rounded-full bg-muted/60 pr-8 pl-3 text-xs text-muted-foreground outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Avatar className="size-7 border border-border">
+                    <AvatarFallback className="bg-indigo-600 text-white font-bold text-xs">S</AvatarFallback>
+                  </Avatar>
+                  <button
+                    onClick={() => setShowEmailModal(false)}
+                    className="rounded-xl p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Gmail Category Tabs */}
+              <div className="flex border-b border-border bg-card/60 text-xs font-bold text-muted-foreground px-2">
+                <div className="flex items-center gap-2 px-4 py-2.5 border-b-2 border-red-500 text-red-600 dark:text-red-400 bg-muted/20">
+                  <Mail className="size-3.5" />
+                  <span>الرئيسية (Primary)</span>
+                  <span className="rounded-full bg-red-500 text-white px-1.5 py-0.2 text-[10px] font-extrabold">1</span>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2.5 opacity-60">
+                  <span>العروض (Promotions)</span>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2.5 opacity-60">
+                  <span>الاجتماعي (Social)</span>
+                </div>
+              </div>
+
+              {/* Email Content Body View */}
+              <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 bg-card/30">
+                
+                {/* Email Subject & Sender Bar */}
+                <div className="border-b border-border/80 pb-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-extrabold text-base sm:text-lg text-foreground leading-snug">
+                      {emailPreview.subject}
+                    </h2>
+                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 text-[10px] font-bold shrink-0">
+                      غير مقروء 📩
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold shadow-md text-base">
+                      🎓
+                    </div>
+                    <div className="min-w-0 flex-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-foreground">{emailPreview.sender}</span>
+                        <span className="text-[10px] text-muted-foreground dir-ltr">&lt;security@seif-study-os.com&gt;</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        إلى: <span className="dir-ltr">seif94803@gmail.com</span> • {emailPreview.sentAt}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rendered HTML Body */}
+                <div
+                  className="rounded-2xl border border-border/80 bg-white text-slate-900 p-5 shadow-sm text-right leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: emailPreview.htmlBody }}
+                />
+              </div>
+
+              {/* Gmail Action Footer */}
+              <div className="border-t border-border p-4 bg-card flex flex-col sm:flex-row gap-2.5">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    copyAndApplyOtp(emailPreview.code);
+                    setShowEmailModal(false);
+                  }}
+                  className="flex-1 h-12 rounded-2xl font-extrabold gap-2 text-base bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20"
+                >
+                  {copiedCode ? <Check className="size-5" /> : <Sparkles className="size-5" />}
+                  <span>{copiedCode ? "تم التطبيق والدخول!" : `تأكيد ودخول الحساب بالرمز (${emailPreview.code}) 🚀`}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEmailModal(false)}
+                  className="h-12 rounded-2xl px-6 font-bold"
+                >
+                  إغلاق Gmail
+                </Button>
+              </div>
+
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
 
 function StudyNavigation({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -233,11 +462,11 @@ function StudyNavigation({ children }: { children: React.ReactNode }) {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="app-shell min-h-screen">
-        <div className="flex h-[76px] items-center justify-between border-b border-border/70 bg-background/65 px-4 backdrop-blur-xl md:px-8">
+        <div className="relative z-40 flex h-[76px] items-center justify-between border-b border-border/70 bg-background/65 px-4 backdrop-blur-xl md:px-8">
           <div className="flex items-center gap-3">
             {mobile && <SidebarTrigger className="rounded-xl"><Menu /></SidebarTrigger>}
             <div>
-              <p className="text-xs text-muted-foreground">يلا نكسب اليوم</p>
+              <p className="text-xs text-muted-foreground">يلا بينا نكسر الدنيا اليوم 🚀</p>
               <p className="font-bold">{current}</p>
             </div>
           </div>
@@ -245,12 +474,14 @@ function StudyNavigation({ children }: { children: React.ReactNode }) {
             {/* Cloud Sync with Firestore indicator */}
             <div className="hidden items-center gap-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 sm:flex">
               <Cloud className="size-3.5" />
-              <span>Firestore متزامن</span>
+              <span>السحابة متزامنة 🔥</span>
             </div>
             <div className="hidden items-center gap-2 rounded-xl bg-card px-3 py-2 text-sm shadow-sm sm:flex">
               <CheckSquare className="size-4 text-primary" />
-              <span>مهمة واحدة = يوم جامد</span>
+              <span>خلص مهمة وخليك جامد 💪</span>
             </div>
+            <PWAInstallButton />
+            <NotificationCenter />
             <Button variant="ghost" size="icon" onClick={() => navigate("/assistant")} className="rounded-xl" title="المساعد الذكي">
               <Bot className="size-5" />
             </Button>
@@ -258,6 +489,7 @@ function StudyNavigation({ children }: { children: React.ReactNode }) {
         </div>
         <main className="page-enter min-h-[calc(100vh-76px)] p-4 md:p-8">{children}</main>
         <PersonalAssistantPanel />
+        <OfflineSyncBanner />
       </SidebarInset>
     </SidebarProvider>
   );

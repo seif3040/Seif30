@@ -1,12 +1,11 @@
 {
-  "projectId": "complete-terrain-w9wl3",
-  "appId": "1:160479326684:web:d54c988d379e0a8caf1f19",
-  "apiKey": "AIzaSyAALqjyJg0986bmKNVqjjxx2XwhiI-AOAY",
-  "authDomain": "complete-terrain-w9wl3.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-seifstudyos-8c181358-ee19-459e-a8ee-8a2f899d1aee",
-  "storageBucket": "complete-terrain-w9wl3.firebasestorage.app",
-  "messagingSenderId": "160479326684",
+  "projectId": "gen-lang-client-0029751019",
+  "appId": "1:764091335975:web:abed7ff7e2c4d3e21dd502",
+  "apiKey": "AIzaSyB6Q5fCfdwHVoIqp8YoDbOjPyvHUsWzIYM",
+  "authDomain": "gen-lang-client-0029751019.firebaseapp.com",
+  "storageBucket": "gen-lang-client-0029751019.firebasestorage.app",
+  "messagingSenderId": "764091335975",
   "measurementId": "",
-  "oAuthClientId": "160479326684-ng8e02t139mhikmufjmc40tme6rid5cq.apps.googleusercontent.com",
+  "oAuthClientId": "764091335975-pbtrrqp7mqoibidr38fjkj70r377ubsn.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

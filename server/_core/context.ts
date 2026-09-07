@@ -15,20 +15,29 @@ export async function createContext(
 ): Promise<TrpcContext> {
   let user: User | null = null;
 
-  try {
-    const oauthUser = await sdk.authenticateRequest(opts.req);
-    if (oauthUser) {
-      user = (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ?? (await getUserByOpenId(privateOwnerOpenId)) ?? oauthUser;
-    }
-  } catch {
-    user = null;
+  // 1. Check private password session first
+  const privateSessionUserOpenId = await readPrivateSession(opts.req);
+  if (privateSessionUserOpenId) {
+    user =
+      (await getUserByOpenId(privateSessionUserOpenId)) ??
+      (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ??
+      (await getUserByOpenId(privateOwnerOpenId)) ??
+      null;
   }
-  if (!user && await readPrivateSession(opts.req.headers.cookie)) {
-    user = (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ?? (await getUserByOpenId(privateOwnerOpenId)) ?? null;
-  }
-  // Standalone mode default: provide the local owner user
+
+  // 2. Fallback to OAuth session if no private session exists
   if (!user) {
-    user = (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ?? (await getUserByOpenId(privateOwnerOpenId)) ?? null;
+    try {
+      const oauthUser = await sdk.authenticateRequest(opts.req);
+      if (oauthUser) {
+        user =
+          (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ??
+          (await getUserByOpenId(privateOwnerOpenId)) ??
+          oauthUser;
+      }
+    } catch {
+      user = null;
+    }
   }
 
   return {

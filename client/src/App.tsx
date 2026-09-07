@@ -25,8 +25,20 @@ import Analytics from "@/pages/Analytics";
 import Rewards from "@/pages/Rewards";
 import Achievements from "@/pages/Achievements";
 import Coins from "@/pages/Coins";
+import MistakeNotebook from "@/pages/MistakeNotebook";
+import FeynmanStudio from "@/pages/FeynmanStudio";
+import QuizGenerator from "@/pages/QuizGenerator";
+import PageSummarizer from "@/pages/PageSummarizer";
+import MindMapStudio from "@/pages/MindMapStudio";
+import TaskDecomposer from "@/pages/TaskDecomposer";
+import HybridHub from "@/pages/HybridHub";
+import DeepWorkShield from "@/pages/DeepWorkShield";
+import MistakeLab from "@/pages/MistakeLab";
+import SmartDayPlanner from "@/pages/SmartDayPlanner";
+import ResourceBridge from "@/pages/ResourceBridge";
+import SmartLearningCalendar from "@/pages/SmartLearningCalendar";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 
-function Router() { return <DashboardLayout><Switch><Route path="/" component={Dashboard} /><Route path="/hub" component={StudyHub} /><Route path="/focus-lounge" component={FocusLounge} /><Route path="/study-search" component={StudySearch} /><Route path="/study-plan" component={StudyPlan} /><Route path="/lesson-sources" component={LessonSources} /><Route path="/weekly-schedule" component={WeeklySchedule} /><Route path="/tasks" component={Tasks} /><Route path="/daily" component={Tasks} /><Route path="/habits" component={Habits} /><Route path="/goals" component={Goals} /><Route path="/pomodoro" component={Pomodoro} /><Route path="/study-video" component={StudyVideo} /><Route path="/exams" component={Exams} /><Route path="/assistant" component={Assistant} /><Route path="/notebooks" component={Notebooks} /><Route path="/flashcards" component={Flashcards} /><Route path="/calendar" component={CalendarPage} /><Route path="/analytics" component={Analytics} /><Route path="/rewards" component={Rewards} /><Route path="/achievements" component={Achievements} /><Route path="/coins" component={Coins} /><Route path="/settings" component={Settings} /><Route component={NotFound} /></Switch></DashboardLayout>; }
+function Router() { return <DashboardLayout><Switch><Route path="/" component={Dashboard} /><Route path="/hub" component={StudyHub} /><Route path="/resource-bridge" component={ResourceBridge} /><Route path="/smart-learning-calendar" component={SmartLearningCalendar} /><Route path="/smart-planner" component={SmartDayPlanner} /><Route path="/focus-lounge" component={FocusLounge} /><Route path="/deep-work" component={DeepWorkShield} /><Route path="/study-search" component={StudySearch} /><Route path="/study-plan" component={StudyPlan} /><Route path="/lesson-sources" component={LessonSources} /><Route path="/weekly-schedule" component={WeeklySchedule} /><Route path="/tasks" component={Tasks} /><Route path="/daily" component={Tasks} /><Route path="/habits" component={Habits} /><Route path="/goals" component={Goals} /><Route path="/pomodoro" component={Pomodoro} /><Route path="/study-video" component={StudyVideo} /><Route path="/exams" component={Exams} /><Route path="/mistakes" component={MistakeNotebook} /><Route path="/mistake-lab" component={MistakeLab} /><Route path="/feynman" component={FeynmanStudio} /><Route path="/quiz-generator" component={QuizGenerator} /><Route path="/summarizer" component={PageSummarizer} /><Route path="/mindmap" component={MindMapStudio} /><Route path="/decomposer" component={TaskDecomposer} /><Route path="/hybrid-hub" component={HybridHub} /><Route path="/assistant" component={Assistant} /><Route path="/notebooks" component={Notebooks} /><Route path="/flashcards" component={Flashcards} /><Route path="/calendar" component={CalendarPage} /><Route path="/analytics" component={Analytics} /><Route path="/rewards" component={Rewards} /><Route path="/achievements" component={Achievements} /><Route path="/coins" component={Coins} /><Route path="/settings" component={Settings} /><Route component={NotFound} /></Switch></DashboardLayout>; }
 export default function App() { return <ErrorBoundary><ThemeProvider defaultTheme="light" switchable><TooltipProvider><Toaster position="top-center" richColors /><Router /></TooltipProvider></ThemeProvider></ErrorBoundary>; }

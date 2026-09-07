@@ -67,8 +67,26 @@ CREATE TABLE IF NOT EXISTS achievements (id INTEGER PRIMARY KEY AUTOINCREMENT, c
 CREATE TABLE IF NOT EXISTS userAchievements (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, achievementId INTEGER NOT NULL REFERENCES achievements(id) ON DELETE CASCADE, unlockedAt INTEGER NOT NULL, UNIQUE(userId, cycleId, achievementId));
 CREATE TABLE IF NOT EXISTS coinTransactions (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, amount INTEGER NOT NULL, type TEXT NOT NULL, reason TEXT NOT NULL, referenceKey TEXT NOT NULL UNIQUE, createdAt INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS studyEvents (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, subjectId INTEGER REFERENCES subjects(id) ON DELETE SET NULL, eventType TEXT NOT NULL, referenceId TEXT NOT NULL, durationMinutes INTEGER DEFAULT 0 NOT NULL, occurredAt INTEGER NOT NULL, UNIQUE(userId, referenceId));
+CREATE TABLE IF NOT EXISTS mistakes (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, subject TEXT NOT NULL, topic TEXT, errorType TEXT DEFAULT 'misunderstanding' NOT NULL, question TEXT NOT NULL, wrongAnswer TEXT, correctAnswer TEXT NOT NULL, explanation TEXT, status TEXT DEFAULT 'needs_review' NOT NULL, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS feynmanSessions (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, topic TEXT NOT NULL, subject TEXT DEFAULT 'عام' NOT NULL, userExplanation TEXT NOT NULL, aiFeedback TEXT NOT NULL, masteryScore INTEGER DEFAULT 0 NOT NULL, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS hybridLessons (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, subject TEXT NOT NULL, teacherName TEXT NOT NULL, mode TEXT DEFAULT 'online' NOT NULL, platformOrCenter TEXT NOT NULL, lectureTitle TEXT NOT NULL, onlineUrl TEXT, accessCode TEXT, expiryDate TEXT, centerTime TEXT, status TEXT DEFAULT 'pending' NOT NULL, sheetStatus TEXT DEFAULT 'pending' NOT NULL, notes TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS customRewards (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, title TEXT NOT NULL, cost INTEGER NOT NULL, icon TEXT DEFAULT '🎁' NOT NULL, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS externalResources (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, cycleId INTEGER NOT NULL REFERENCES studyCycles(id) ON DELETE CASCADE, title TEXT NOT NULL, platform TEXT NOT NULL, url TEXT NOT NULL, subject TEXT DEFAULT 'عام' NOT NULL, totalMinutes INTEGER DEFAULT 60 NOT NULL, completedMinutes INTEGER DEFAULT 0 NOT NULL, progressPercent INTEGER DEFAULT 0 NOT NULL, status TEXT DEFAULT 'in_progress' NOT NULL, notes TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS resourceBookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, resourceId INTEGER NOT NULL REFERENCES externalResources(id) ON DELETE CASCADE, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, timestampStr TEXT NOT NULL, title TEXT NOT NULL, note TEXT, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS resourceFocusSessions (id INTEGER PRIMARY KEY AUTOINCREMENT, resourceId INTEGER NOT NULL REFERENCES externalResources(id) ON DELETE CASCADE, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, durationMinutes INTEGER NOT NULL, platform TEXT NOT NULL, sessionNotes TEXT, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS smartCalendarEvents (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, title TEXT NOT NULL, category TEXT NOT NULL, sourceType TEXT DEFAULT 'manual' NOT NULL, sourceId INTEGER, eventDate TEXT NOT NULL, startTime TEXT NOT NULL, durationMinutes INTEGER DEFAULT 45 NOT NULL, subject TEXT DEFAULT 'عام' NOT NULL, platform TEXT, linkUrl TEXT, isCompleted INTEGER DEFAULT 0 NOT NULL, notes TEXT, googleEventId TEXT, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS studyRooms (id INTEGER PRIMARY KEY AUTOINCREMENT, roomCode TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT, createdByUserId INTEGER NOT NULL, createdByName TEXT NOT NULL, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS studyRoomMembers (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId INTEGER NOT NULL REFERENCES studyRooms(id) ON DELETE CASCADE, userId INTEGER NOT NULL, userName TEXT NOT NULL, joinedAt INTEGER NOT NULL, UNIQUE(roomId, userId));
+CREATE TABLE IF NOT EXISTS studyRoomResources (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId INTEGER NOT NULL REFERENCES studyRooms(id) ON DELETE CASCADE, title TEXT NOT NULL, platform TEXT NOT NULL, url TEXT NOT NULL, subject TEXT DEFAULT 'عام' NOT NULL, addedByUserId INTEGER NOT NULL, addedByName TEXT NOT NULL, createdAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS studyRoomProgress (id INTEGER PRIMARY KEY AUTOINCREMENT, roomId INTEGER NOT NULL REFERENCES studyRooms(id) ON DELETE CASCADE, roomResourceId INTEGER NOT NULL REFERENCES studyRoomResources(id) ON DELETE CASCADE, userId INTEGER NOT NULL, userName TEXT NOT NULL, progressPercent INTEGER DEFAULT 0 NOT NULL, completedMinutes INTEGER DEFAULT 0 NOT NULL, lastActiveAt INTEGER NOT NULL, UNIQUE(roomResourceId, userId));
+CREATE TABLE IF NOT EXISTS notificationDismissals (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, notificationKey TEXT NOT NULL, dismissedAt INTEGER NOT NULL, UNIQUE(userId, notificationKey));
+CREATE TABLE IF NOT EXISTS notificationSettings (id INTEGER PRIMARY KEY AUTOINCREMENT, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE, leadMinutes INTEGER DEFAULT 30 NOT NULL, soundEnabled INTEGER DEFAULT 1 NOT NULL, browserPushEnabled INTEGER DEFAULT 0 NOT NULL, antiProcrastinationMode INTEGER DEFAULT 1 NOT NULL, updatedAt INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS externalResourcePdfs (id INTEGER PRIMARY KEY AUTOINCREMENT, resourceId INTEGER REFERENCES externalResources(id) ON DELETE CASCADE, userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, fileName TEXT NOT NULL, fileUrl TEXT, subject TEXT DEFAULT 'عام' NOT NULL, extractedText TEXT NOT NULL, summaryJson TEXT, characterCount INTEGER DEFAULT 0 NOT NULL, createdAt INTEGER NOT NULL);
   `;
   sqlite.exec(ddl);
+  try {
+    sqlite.exec("ALTER TABLE smartCalendarEvents ADD COLUMN googleEventId TEXT");
+  } catch {}
 }
 
 async function ensureDefaultOwner(db: any) {
@@ -839,7 +857,9 @@ export async function listFlashcardDecks(userId: number) {
 
 export async function createFlashcardDeck(userId: number, input: { title: string; description?: string; color?: string }) {
   const db = await database(); const cycle = await getActiveCycle(userId);
-  await db.insert(flashcardDecks).values({ userId, cycleId: cycle.id, title: input.title, description: input.description ?? null, color: input.color ?? "#8B5CF6" });
+  const res = await db.insert(flashcardDecks).values({ userId, cycleId: cycle.id, title: input.title, description: input.description ?? null, color: input.color ?? "#8B5CF6" });
+  const deckId = Number((res as any).lastInsertRowid || (res as any)[0]?.insertId || 0);
+  return { id: deckId, title: input.title };
 }
 
 async function ownedFlashcardDeck(db: any, userId: number, deckId: number) {
@@ -883,6 +903,57 @@ export async function listNotebooks(userId: number) { const db = await database(
 export async function createNotebook(userId: number, title: string) { const db = await database(); const cycle = await getActiveCycle(userId); await db.insert(notebooks).values({ userId, cycleId: cycle.id, title }); }
 export async function listNotes(userId: number, notebookId: number) { const db = await database(); await ownedNotebook(db, userId, notebookId); return db.select().from(notes).where(eq(notes.notebookId, notebookId)).orderBy(desc(notes.updatedAt)); }
 export async function createNote(userId: number, input: { notebookId: number; title: string; content: string }) { const db = await database(); await ownedNotebook(db, userId, input.notebookId); await db.insert(notes).values(input); }
+
+export async function exportAllUserNotes(userId: number) {
+  const sqlite = _sqlite;
+  
+  const notebookNotesStmt = sqlite.prepare(`
+    SELECT n.id, n.title, n.content, nb.title as category, n.updatedAt, 'notebook' as type
+    FROM notes n
+    JOIN notebooks nb ON n.notebookId = nb.id
+    WHERE nb.userId = ?
+    ORDER BY n.updatedAt DESC
+  `);
+  const notebookNotes = (notebookNotesStmt.all(userId) as any[]) || [];
+
+  const videoNotesStmt = sqlite.prepare(`
+    SELECT vn.id, vn.title, vn.content, svs.title as category, vn.updatedAt, 'video' as type
+    FROM videoNotes vn
+    JOIN studyVideoSessions svs ON vn.sessionId = svs.id
+    WHERE vn.userId = ?
+    ORDER BY vn.updatedAt DESC
+  `);
+  const videoNotesList = (videoNotesStmt.all(userId) as any[]) || [];
+
+  const mistakesStmt = sqlite.prepare(`
+    SELECT id, (subject || ': ' || COALESCE(topic, 'سؤال خطأ')) as title,
+      ('المادة: ' || subject || char(10) || 'نوع الخطأ: ' || errorType || char(10) || 'السؤال: ' || question || char(10) || 'الإجابة الخاطئة: ' || COALESCE(wrongAnswer, 'بدون') || char(10) || 'الإجابة الصحيحة: ' || correctAnswer || char(10) || 'الشرح والتعليل: ' || COALESCE(explanation, 'لا يوجد')) as content,
+      subject as category, createdAt as updatedAt, 'mistake' as type
+    FROM mistakes
+    WHERE userId = ?
+    ORDER BY createdAt DESC
+  `);
+  const mistakesList = (mistakesStmt.all(userId) as any[]) || [];
+
+  const resourcesStmt = sqlite.prepare(`
+    SELECT id, title, notes as content, subject as category, updatedAt, 'resource' as type
+    FROM externalResources
+    WHERE userId = ? AND notes IS NOT NULL AND length(trim(notes)) > 0
+    ORDER BY updatedAt DESC
+  `);
+  const resourceNotesList = (resourcesStmt.all(userId) as any[]) || [];
+
+  const allNotes = [...notebookNotes, ...videoNotesList, ...mistakesList, ...resourceNotesList];
+
+  return {
+    count: allNotes.length,
+    notes: allNotes,
+    notebookNotesCount: notebookNotes.length,
+    videoNotesCount: videoNotesList.length,
+    mistakesCount: mistakesList.length,
+    resourceNotesCount: resourceNotesList.length,
+  };
+}
 
 export async function listNotebookSources(userId: number, notebookId: number) { const db = await database(); await ownedNotebook(db, userId, notebookId); return db.select({ id: notebookSources.id, fileName: notebookSources.fileName, mimeType: notebookSources.mimeType, storageUrl: notebookSources.storageUrl, characterCount: notebookSources.characterCount, isTruncated: notebookSources.isTruncated, createdAt: notebookSources.createdAt }).from(notebookSources).where(eq(notebookSources.notebookId, notebookId)).orderBy(desc(notebookSources.createdAt)); }
 
@@ -966,3 +1037,2304 @@ export async function chatWithAssistant(userId: number, messages: { role: "user"
   const response = await invokeLLM({ messages: [{ role: "system", content: `أنت صاحب مذاكرة مصري مشجع. ساعد الطالب بخطوات عملية قصيرة. هذه بياناته الحالية: ${JSON.stringify(metrics)}` }, ...messages] });
   return response.choices[0]?.message?.content ?? "مش قادر أرد دلوقتي، جرّب تاني.";
 }
+
+// ===== Mistakes (كشكول الأخطاء) =====
+export async function listMistakes(userId: number) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+  const stmt = sqlite.prepare("SELECT * FROM mistakes WHERE userId = ? AND cycleId = ? ORDER BY createdAt DESC");
+  return stmt.all(userId, cycle.id);
+}
+
+export async function createMistake(userId: number, input: { subject: string; topic?: string; errorType: string; question: string; wrongAnswer?: string; correctAnswer: string; explanation?: string }) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    "INSERT INTO mistakes (userId, cycleId, subject, topic, errorType, question, wrongAnswer, correctAnswer, explanation, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'needs_review', ?, ?)"
+  );
+  stmt.run(
+    userId,
+    cycle.id,
+    input.subject,
+    input.topic ?? null,
+    input.errorType || "misunderstanding",
+    input.question,
+    input.wrongAnswer ?? null,
+    input.correctAnswer,
+    input.explanation ?? null,
+    now,
+    now
+  );
+  await awardCoins({ userId, cycleId: cycle.id, amount: 15, reason: `تسجيل خطأ للتعلم: ${input.subject}`, referenceKey: `mistake:add:${now}` });
+  return { success: true };
+}
+
+export async function updateMistakeStatus(userId: number, mistakeId: number, status: "needs_review" | "reviewed" | "mastered") {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("UPDATE mistakes SET status = ?, updatedAt = ? WHERE id = ? AND userId = ?");
+  stmt.run(status, Date.now(), mistakeId, userId);
+  return { success: true };
+}
+
+export async function deleteMistake(userId: number, mistakeId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM mistakes WHERE id = ? AND userId = ?");
+  stmt.run(mistakeId, userId);
+  return { success: true };
+}
+
+export async function analyzeMistakesAI(userId: number) {
+  const mistakesList = await listMistakes(userId);
+  if (!mistakesList.length) {
+    return "سجل بعض الأخطاء أولاً لكشف الأنماط وثغرات الفهم وتلقي خطة المعالجة الشخصية!";
+  }
+  const summaryText = mistakesList.map((m: any) => `- المادة: ${m.subject} | نوع الخطأ: ${m.errorType} | السؤال: ${m.question} | خطأي: ${m.wrongAnswer || "غير محدد"} | الصواب: ${m.correctAnswer}`).join("\n");
+  const response = await invokeLLM({
+    messages: [
+      {
+        role: "system",
+        content: `أنت موجه دراسي خبير في تحليل كشكول الأخطاء (Mistake Notebook Analysis). حلل سجل أخطاء الطالب التالي وقدم تقريرًا مشجعًا ومباشرًا بالعامية المصرية الراقية يتضمن:
+1) أكثر المواد والأنماط تكرارًا في الأخطاء (مثل: التسرع، عدم استيعاب المفاهيم، سوء إدارة الوقت).
+2) 3 نصائح ذهبية ومحددة لتجنب هذه الأخطاء بالذات في الامتحان القادم.
+3) كلمة تحفيزية ختامية.`
+      },
+      { role: "user", content: summaryText }
+    ]
+  });
+  return response.choices[0]?.message?.content ?? "تعذر تحليل الأخطاء حاليًا.";
+}
+
+// ===== Feynman Technique Studio =====
+export async function listFeynmanSessions(userId: number) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+  const stmt = sqlite.prepare("SELECT * FROM feynmanSessions WHERE userId = ? AND cycleId = ? ORDER BY createdAt DESC LIMIT 20");
+  return stmt.all(userId, cycle.id);
+}
+
+export async function evaluateFeynmanAI(userId: number, input: { topic: string; subject: string; userExplanation: string }) {
+  const cycle = await getActiveCycle(userId);
+  const response = await invokeLLM({
+    messages: [
+      {
+        role: "system",
+        content: `أنت معلم عبقري ومحفز يستخدم تقنية فاينمان (Feynman Technique) لتقييم شرح الطالب. الطالب يحاول شرح مفهوم معين بأبسط أسلوب ممكن.
+قم بتحليل الشرح وأعد التقييم كـ JSON بالصيغة التالية:
+{
+  "masteryScore": 88,
+  "summary": "ملخص عام لمدى جودة الشرح وأسلوب العرض",
+  "strengths": ["نقطة قوة 1", "نقطة قوة 2"],
+  "gaps": ["نقطة تحتاج توضيح أكثر 1"],
+  "simplifiedAnalogy": "تشبيه بسيط يسهل حفظ هذا المفهوم للأبد"
+}`
+      },
+      {
+        role: "user",
+        content: `الموضوع: ${input.topic}\nالمادة: ${input.subject}\nشرح الطالب: ${input.userExplanation}`
+      }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let result: any = {};
+  try {
+    result = JSON.parse(raw);
+  } catch {
+    result = { masteryScore: 80, summary: raw, strengths: [], gaps: [], simplifiedAnalogy: "" };
+  }
+
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    "INSERT INTO feynmanSessions (userId, cycleId, topic, subject, userExplanation, aiFeedback, masteryScore, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  );
+  stmt.run(userId, cycle.id, input.topic, input.subject, input.userExplanation, JSON.stringify(result), result.masteryScore || 80, now);
+
+  await awardCoins({ userId, cycleId: cycle.id, amount: 30, reason: `ممارسة تقنية فاينمان: ${input.topic}`, referenceKey: `feynman:${now}` });
+
+  return { success: true, result };
+}
+
+// ===== Quick AI Quiz Generator =====
+export async function generateQuizAI(
+  userId: number,
+  input: { subject: string; topicText: string; difficulty: "easy" | "medium" | "hard"; questionCount: number }
+) {
+  const diffMap = { easy: "سهل ومباشر", medium: "متوسط لقياس الفهم", hard: "صعب وتنافسي للأوائل" };
+  const prompt = `أنشئ اختبار اختيار من متعدد (MCQ) يتكون من ${input.questionCount} أسئلة بخصوص الموضوع/الدرس التالي:
+المادة: ${input.subject}
+مستوى الصعوبة: ${diffMap[input.difficulty]}
+النص/المحتوى: ${input.topicText}
+
+أعد الناتج كـ JSON متبعاً الهيكل التالي:
+{
+  "title": "عنوان الاختبار المقترح",
+  "questions": [
+    {
+      "id": 1,
+      "question": "نص السؤال هنا؟",
+      "options": ["خيار 1", "خيار 2", "خيار 3", "خيار 4"],
+      "correctIndex": 0,
+      "explanation": "تفسير سبب صحة الخيار باختصار"
+    }
+  ]
+}`;
+
+  const response = await invokeLLM({
+    messages: [{ role: "system", content: "أنت خبير واضع امتحانات ثانوية ومرحلة جامعية دقيق جداً." }, { role: "user", content: prompt }],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let quiz: any = {};
+  try {
+    quiz = JSON.parse(raw);
+  } catch {
+    quiz = { title: `اختبار سريعي - ${input.subject}`, questions: [] };
+  }
+  return quiz;
+}
+
+export async function submitQuizResults(
+  userId: number,
+  input: { title: string; totalQuestions: number; correctAnswers: number; difficulty: "easy" | "medium" | "hard" }
+) {
+  const db = await database();
+  const cycle = await getActiveCycle(userId);
+  const score = Math.round((input.correctAnswers / Math.max(1, input.totalQuestions)) * 100);
+  const coinsEarned = Math.round(score * 0.5) + (input.difficulty === "hard" ? 20 : 10);
+
+  const now = Date.now();
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: coinsEarned,
+    reason: `إكمال اختبار سريع (${input.title}): ${score}%`,
+    referenceKey: `quiz:${now}`,
+  });
+
+  return { score, coinsEarned };
+}
+
+// ===== Page & Note Summarizer AI =====
+export async function summarizePageAI(
+  userId: number,
+  input: { title: string; contentText: string; imageBase64?: string }
+) {
+  const prompt = `أنت مساعد تعليمي عبقري. قم بتحليل وتلخيص النص والمحتوى التالي:
+العنوان/المادة: ${input.title}
+المحتوى:
+${input.contentText}
+
+أعد الناتج بصيغة JSON بالتنسيق التالي:
+{
+  "summary": "ملخص شامل وواضح للدرس في 3-5 فقرات قصيرة",
+  "keyConcepts": ["المفهوم الأول", "المفهوم الثاني", "المفهوم الثالث"],
+  "takeaways": ["نصيحة أو قانون هام للحفظ", "نقطة غالباً تتكرر في الامتحانات"],
+  "quickQuiz": [
+    { "q": "سؤال سريع مراجعة؟", "a": "الإجابة النموذجية القابلة للحفظ" }
+  ]
+}`;
+
+  const messages: any[] = [{ role: "system", content: "أنت خبير معالجة وتلخيص الكتب والملاحظات الدراسية." }];
+
+  if (input.imageBase64) {
+    messages.push({
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${input.imageBase64}` } },
+      ],
+    });
+  } else {
+    messages.push({ role: "user", content: prompt });
+  }
+
+  const response = await invokeLLM({ messages, response_format: { type: "json_object" } });
+  const raw = response.choices[0]?.message?.content ?? "{}";
+
+  let result: any = {};
+  try {
+    result = JSON.parse(raw);
+  } catch {
+    result = { summary: raw, keyConcepts: [], takeaways: [], quickQuiz: [] };
+  }
+
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 20,
+    reason: `تلخيص درس/صفحة بالذكاء الاصطناعي: ${input.title}`,
+    referenceKey: `summarize:${Date.now()}`,
+  });
+
+  return result;
+}
+
+// ===== Daily Challenge Engine =====
+export async function getDailyChallenge(userId: number) {
+  const dateStr = new Date().toISOString().split("T")[0];
+  const challenges = [
+    { title: "بطل التركيز", task: "أكمل جلسة بومودورو واحدة وحل اختباراً سريعاً", bonusCoins: 50 },
+    { title: "مصحح الأخطاء", task: "سجّل خطأ واحداً في كشكول الأخطاء وذاكره", bonusCoins: 40 },
+    { title: "الشارح الذكي", task: "مارس تقنية فاينمان لشرح درس من اختيارك", bonusCoins: 60 },
+    { title: "صائد النقاط", task: "أكمل هدفين يوميين وراجع فلاش كاردز", bonusCoins: 50 },
+  ];
+
+  // Pick deterministic challenge for the day
+  const dayHash = dateStr.split("-").reduce((a, b) => a + Number(b), 0) + userId;
+  const challenge = challenges[dayHash % challenges.length];
+
+  return { date: dateStr, ...challenge };
+}
+
+// ===== AI Mind Map Generator =====
+export async function generateMindMapAI(
+  userId: number,
+  input: { topic: string; subject: string }
+) {
+  const prompt = `قم ببناء خريطة ذهنية هيكلية مفصلة (Mind Map) حول الموضوع التالي:
+الموضوع: ${input.topic}
+المادة: ${input.subject}
+
+أعد الناتج كـ JSON متبعاً الهيكل الشجري التالي:
+{
+  "title": "${input.topic}",
+  "root": {
+    "label": "${input.topic}",
+    "children": [
+      {
+        "label": "الفرع الرئيسي الأول",
+        "description": "شرح موجز للفرع",
+        "children": [
+          { "label": "فرع فرعي 1.1", "description": "تفصيل أو قانون أو مثال" },
+          { "label": "فرع فرعي 1.2", "description": "تفصيل آخر" }
+        ]
+      },
+      {
+        "label": "الفرع الرئيسي الثاني",
+        "description": "شرح موجز للفرع",
+        "children": [
+          { "label": "فرع فرعي 2.1", "description": "نقطة هامة" },
+          { "label": "فرع فرعي 2.2", "description": "نقطة هامة أخرى" }
+        ]
+      }
+    ]
+  }
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت خبير رسم الخرائط الذهنية والتنظيم الهيكلي للعلوم والمناهج." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let mindMap: any = {};
+  try {
+    mindMap = JSON.parse(raw);
+  } catch {
+    mindMap = { title: input.topic, root: { label: input.topic, children: [] } };
+  }
+
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 25,
+    reason: `إنشاء خريطة ذهنية: ${input.topic}`,
+    referenceKey: `mindmap:${Date.now()}`,
+  });
+
+  return mindMap;
+}
+
+// ===== AI Task & Chapter Decomposer =====
+export async function decomposeTaskAI(
+  userId: number,
+  input: { bigTaskTitle: string; detailsText?: string }
+) {
+  const prompt = `قم بتفكيك المهمة أو الباب الدراسي الكبير التالي إلى خطوات صغيرة جداً ومحددة بوقت (Micro-Tasks) يمكن إنجاز كل منها في 15-20 دقيقة لتجنب التسويف والشعور بالإرهاق:
+المهمة/الدرس الكبير: ${input.bigTaskTitle}
+التفاصيل الإضافية: ${input.detailsText || "لا يوجد"}
+
+أعد الناتج كـ JSON بالتنسيق التالي:
+{
+  "title": "${input.bigTaskTitle}",
+  "estimatedTotalMinutes": 90,
+  "steps": [
+    {
+      "stepNumber": 1,
+      "title": "عنوان الخطوة المصغرة الأولى (مثال: قراءة أول 3 صفحات وتحديد المصطلحات)",
+      "estimatedMinutes": 15,
+      "advice": "نصيحة سريعة لإنجاز هذه الخطوة بتركيز"
+    }
+  ]
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت خبير علم نفس الإنتاجية وإدارة الوقت وتفتيت المذاكرة الصعبة." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let decomposed: any = {};
+  try {
+    decomposed = JSON.parse(raw);
+  } catch {
+    decomposed = { title: input.bigTaskTitle, estimatedTotalMinutes: 60, steps: [] };
+  }
+
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 20,
+    reason: `تفتيت مهمة دراسية كبرى: ${input.bigTaskTitle}`,
+    referenceKey: `decompose:${Date.now()}`,
+  });
+
+  return decomposed;
+}
+
+// ===== Hybrid Lessons & Center Hub =====
+export async function listHybridLessons(userId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("SELECT * FROM hybridLessons WHERE userId = ? ORDER BY createdAt DESC");
+  return stmt.all(userId);
+}
+
+export async function createHybridLesson(
+  userId: number,
+  input: {
+    subject: string;
+    teacherName: string;
+    mode: "online" | "center" | "hybrid";
+    platformOrCenter: string;
+    lectureTitle: string;
+    onlineUrl?: string;
+    accessCode?: string;
+    expiryDate?: string;
+    centerTime?: string;
+    notes?: string;
+  }
+) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+  const now = Date.now();
+
+  const stmt = sqlite.prepare(
+    `INSERT INTO hybridLessons 
+     (userId, cycleId, subject, teacherName, mode, platformOrCenter, lectureTitle, onlineUrl, accessCode, expiryDate, centerTime, status, sheetStatus, notes, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?, ?)`
+  );
+
+  stmt.run(
+    userId,
+    cycle.id,
+    input.subject,
+    input.teacherName,
+    input.mode,
+    input.platformOrCenter,
+    input.lectureTitle,
+    input.onlineUrl || "",
+    input.accessCode || "",
+    input.expiryDate || "",
+    input.centerTime || "",
+    input.notes || "",
+    now,
+    now
+  );
+
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 15,
+    reason: `تسجيل درس هجين/سنتر: ${input.lectureTitle}`,
+    referenceKey: `hybrid:${now}`,
+  });
+
+  return { success: true };
+}
+
+export async function updateHybridLessonStatus(
+  userId: number,
+  lessonId: number,
+  input: { status?: "pending" | "watched" | "attended" | "completed"; sheetStatus?: "pending" | "submitted" | "corrected" }
+) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+
+  if (input.status && input.sheetStatus) {
+    const stmt = sqlite.prepare("UPDATE hybridLessons SET status = ?, sheetStatus = ?, updatedAt = ? WHERE id = ? AND userId = ?");
+    stmt.run(input.status, input.sheetStatus, now, lessonId, userId);
+  } else if (input.status) {
+    const stmt = sqlite.prepare("UPDATE hybridLessons SET status = ?, updatedAt = ? WHERE id = ? AND userId = ?");
+    stmt.run(input.status, now, lessonId, userId);
+  } else if (input.sheetStatus) {
+    const stmt = sqlite.prepare("UPDATE hybridLessons SET sheetStatus = ?, updatedAt = ? WHERE id = ? AND userId = ?");
+    stmt.run(input.sheetStatus, now, lessonId, userId);
+  }
+
+  return { success: true };
+}
+
+export async function deleteHybridLesson(userId: number, lessonId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM hybridLessons WHERE id = ? AND userId = ?");
+  stmt.run(lessonId, userId);
+  return { success: true };
+}
+
+// ===== Deep Work Shield =====
+export async function completeDeepWorkSession(
+  userId: number,
+  input: { durationMinutes: number; subject?: string }
+) {
+  const cycle = await getActiveCycle(userId);
+  const coinsEarned = Math.round(input.durationMinutes * 1.5) + 20; // Extra bonus for deep work mode
+  const now = Date.now();
+
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: coinsEarned,
+    reason: `جلسة تركيز عميق ودراسة صامتة (${input.durationMinutes} دقيقة)`,
+    referenceKey: `deepwork:${now}`,
+  });
+
+  return { coinsEarned, durationMinutes: input.durationMinutes };
+}
+
+// ===== Spaced Repetition Mistake Quizzer =====
+export async function generateMistakeQuizAI(
+  userId: number,
+  input: { subject?: string }
+) {
+  const sqlite = getSqlite();
+  let stmt;
+  let params: any[] = [userId];
+
+  if (input.subject && input.subject !== "الكل") {
+    stmt = sqlite.prepare("SELECT * FROM mistakes WHERE userId = ? AND subject = ? ORDER BY RANDOM() LIMIT 5");
+    params.push(input.subject);
+  } else {
+    stmt = sqlite.prepare("SELECT * FROM mistakes WHERE userId = ? ORDER BY RANDOM() LIMIT 5");
+  }
+
+  const rawMistakes: any[] = stmt.all(...params);
+
+  if (!rawMistakes || rawMistakes.length === 0) {
+    return {
+      hasMistakes: false,
+      questions: [],
+    };
+  }
+
+  const prompt = `قم بتحويل الأخطاء والتسؤلات التالية التي أخطأ فيها الطالب سابقاً في دفتر أخطائه إلى اختبار تفاعلي اختيار من متعدد (Multiple Choice Quiz) لإعادة اختباره وتثبيت المعلومة عنده:
+
+الأخطاء المكتوبة:
+${JSON.stringify(
+  rawMistakes.map((m) => ({
+    subject: m.subject,
+    topic: m.topic,
+    question: m.question,
+    wrongAnswer: m.wrongAnswer,
+    correctAnswer: m.correctAnswer,
+    explanation: m.explanation,
+  })),
+  null,
+  2
+)}
+
+أعد الناتج كـ JSON بالتنسيق التالي:
+{
+  "hasMistakes": true,
+  "questions": [
+    {
+      "id": 1,
+      "subject": "المادة",
+      "question": "صيغة السؤال بأسلوب واضع امتحانات مشوق",
+      "options": ["الإجابة الصحيحة", "خيار خاطئ 1", "خيار خاطئ 2", "خيار خاطئ 3"],
+      "correctOptionIndex": 0,
+      "explanation": "شرح لماذا هذه هي الإجابة الصحيحة لتثبيت المعلومة"
+    }
+  ]
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت خبير معالجة الأخطاء الدراسية وصانع أسئلة لتثبيت الفهم للتكرار المتباعد." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let quizData: any = {};
+  try {
+    quizData = JSON.parse(raw);
+  } catch {
+    quizData = { hasMistakes: true, questions: [] };
+  }
+
+  return quizData;
+}
+
+// ===== Custom Personal Rewards =====
+export async function listCustomRewards(userId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("SELECT * FROM customRewards WHERE userId = ? ORDER BY createdAt DESC");
+  return stmt.all(userId);
+}
+
+export async function createCustomReward(
+  userId: number,
+  input: { title: string; cost: number; icon?: string }
+) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+  const stmt = sqlite.prepare("INSERT INTO customRewards (userId, cycleId, title, cost, icon, createdAt) VALUES (?, ?, ?, ?, ?, ?)");
+  stmt.run(userId, cycle.id, input.title, input.cost, input.icon || "🎁", Date.now());
+  return { success: true };
+}
+
+export async function deleteCustomReward(userId: number, rewardId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM customRewards WHERE id = ? AND userId = ?");
+  stmt.run(rewardId, userId);
+  return { success: true };
+}
+
+// ===== AI Smart Day Planner (Hybrid & External Platforms) =====
+export async function generateSmartDayPlanAI(
+  userId: number,
+  input: {
+    wakeTime: string;
+    centerDetails?: string;
+    travelMinutes?: number;
+    onlinePlatformsList?: string;
+    targetSubjects?: string;
+  }
+) {
+  const prompt = `قم بالتخطيط لليوم الدراسي المثالي للطالب المتكامل (طالب أونلاين على منصات تعليمية خارجية + دروس سنتر حضوري) مع مراعاة الوقت الضائع في النزول والمواصلات والراحة.
+
+بيانات يوم الطالب:
+- وقت الاستيقاظ: ${input.wakeTime || "07:00 صباحاً"}
+- تفاصيل دروس السنتر ومواعيدها: ${input.centerDetails || "لا يوجد سنتر اليوم"}
+- وقت المواصلات والنزول المقدر: ${input.travelMinutes || 30} دقيقة
+- المحاضرات الأونلاين المراد مشاهدتها (على منصات خارجية متخصصة): ${input.onlinePlatformsList || "متابعة محاضرة أونلاين واحدة"}
+- المواد والمهام المطلوب إنجازها: ${input.targetSubjects || "مراجعة وحل شيتات"}
+
+أعد الناتج كـ JSON بالتنسيق التالي:
+{
+  "daySummary": "ملخص مشجع لليوم وكيف يوازن بين السنتر والمنصات الخارجية",
+  "totalStudyHours": 6,
+  "timeline": [
+    {
+      "timeSlot": "07:00 - 08:00",
+      "activity": "الاستيقاظ، الفطور، والاستعداد للنزول للسنتر / المذاكرة",
+      "type": "break"
+    },
+    {
+      "timeSlot": "08:00 - 08:30",
+      "activity": "وقت الانتقال والمواصلات للسنتر مع الاستماع لتسجيل سريع أو مراجعة سريعة",
+      "type": "travel"
+    },
+    {
+      "timeSlot": "08:30 - 11:30",
+      "activity": "حضور درس السنتر وتسجيل أهم النقاط والشيتات",
+      "type": "center"
+    },
+    {
+      "timeSlot": "12:00 - 02:00",
+      "activity": "جلسة مذاكرة عميقة على المنصة الخارجية لمشاهدة محاضرة الأونلاين",
+      "type": "online"
+    },
+    {
+      "timeSlot": "02:00 - 03:00",
+      "activity": "غداء واستراحة محارب",
+      "type": "break"
+    },
+    {
+      "timeSlot": "03:00 - 05:00",
+      "activity": "حل شيت السنتر + تطبيق أسئلة الدرس الأونلاين",
+      "type": "study"
+    }
+  ],
+  "proTips": [
+    "نصيحة لحفظ كود المنصة قبل البدء",
+    "نصيحة للاستفادة من وقت المواصلات"
+  ]
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت خبير التخطيط اليومي للطلاب والهندسة الزمنية لجدولة الدروس الأونلاين والسناتر." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  let dayPlan: any = {};
+  try {
+    dayPlan = JSON.parse(raw);
+  } catch {
+    dayPlan = { daySummary: "خطتك اليومية المنظمة", timeline: [], proTips: [] };
+  }
+
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 25,
+    reason: "توليد مخطط اليوم المثالي بالذكاء الاصطناعي",
+    referenceKey: `dayplan:${Date.now()}`,
+  });
+
+  return dayPlan;
+}
+
+// ===== Resource Bridge Module =====
+export async function listExternalResources(userId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("SELECT * FROM externalResources WHERE userId = ? ORDER BY updatedAt DESC");
+  const resources: any[] = stmt.all(userId);
+
+  // Attach bookmarks count and list to each resource
+  const bmStmt = sqlite.prepare("SELECT * FROM resourceBookmarks WHERE resourceId = ? ORDER BY id ASC");
+  return resources.map((r) => ({
+    ...r,
+    bookmarks: bmStmt.all(r.id),
+  }));
+}
+
+export async function addExternalResourceAI(
+  userId: number,
+  input: {
+    url: string;
+    customTitle?: string;
+    subject?: string;
+    totalMinutes?: number;
+    platform?: string;
+  }
+) {
+  const sqlite = getSqlite();
+  const cycle = await getActiveCycle(userId);
+
+  // Use LLM to extract metadata if title or platform is missing
+  let title = input.customTitle?.trim() || "";
+  let platform = input.platform?.trim() || "";
+  let subject = input.subject?.trim() || "عام";
+  let totalMinutes = input.totalMinutes || 60;
+  let notes = "";
+
+  if (!title || !platform) {
+    const prompt = `قم بتحليل الرابط الإلكتروني التالي من منصة تعليمية خارجية (مثل Udemy, Coursera, Abwab, YouTube, Edvanya, Khan Academy, الخ) واستخراج اسم الكورس/الدورة، اسم المنصة، المادة التقديرية، والمدة الزمنية التقديرية بالدقائق:
+
+الرابط: ${input.url}
+العنوان اليدوي (إن وجد): ${input.customTitle || "غير محدد"}
+
+أعد الناتج كـ JSON بالتنسيق التالي:
+{
+  "title": "اسم الكورس أو المحاضرة الواضح باللغة العربية أو الإنجليزية",
+  "platform": "اسم المنصة (مثلاً Udemy, Coursera, YouTube, Abwab, Edvanya, منصة خاصة)",
+  "subject": "المادة الدراسية المتعلقة (مثلاً فيزياء، كيمياء، برمجة، لغات)",
+  "totalMinutes": 90,
+  "summaryNotes": "ملخص شامل للكورس وما سيتم استثنائه أو تعلمه"
+}`;
+
+    try {
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: "أنت خبير تحليل وإداراة الكورسات والمصادر التعليمية الخارجية." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const raw = response.choices[0]?.message?.content ?? "{}";
+      const parsed = JSON.parse(raw);
+      if (!title) title = parsed.title || "دورة تعليمية خارجية";
+      if (!platform) platform = parsed.platform || "منصة تعليمية";
+      if (parsed.subject && subject === "عام") subject = parsed.subject;
+      if (parsed.totalMinutes && totalMinutes === 60) totalMinutes = Number(parsed.totalMinutes) || 60;
+      notes = parsed.summaryNotes || "";
+    } catch {
+      if (!title) title = "دورة تعليمية خارجية";
+      if (!platform) platform = "منصة تعليمية";
+    }
+  }
+
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    `INSERT INTO externalResources (userId, cycleId, title, platform, url, subject, totalMinutes, completedMinutes, progressPercent, status, notes, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 'in_progress', ?, ?, ?)`
+  );
+
+  const res = stmt.run(userId, cycle.id, title, platform, input.url, subject, totalMinutes, notes, now, now);
+
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 20,
+    reason: `ربط مصدر تعليمي خارجي: ${title}`,
+    referenceKey: `resource:${now}`,
+  });
+
+  return { id: res.lastInsertRowid, title, platform, url: input.url };
+}
+
+export async function updateResourceProgress(
+  userId: number,
+  resourceId: number,
+  input: { completedMinutes: number; notes?: string }
+) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+
+  const getStmt = sqlite.prepare("SELECT * FROM externalResources WHERE id = ? AND userId = ?");
+  const resource: any = getStmt.get(resourceId, userId);
+  if (!resource) throw new Error("المصدر غير موجود.");
+
+  const completedMinutes = Math.min(input.completedMinutes, resource.totalMinutes);
+  const progressPercent = Math.min(100, Math.round((completedMinutes / resource.totalMinutes) * 100));
+  const newStatus = progressPercent >= 100 ? "completed" : "in_progress";
+
+  const updateStmt = sqlite.prepare(
+    `UPDATE externalResources 
+     SET completedMinutes = ?, progressPercent = ?, status = ?, notes = COALESCE(?, notes), updatedAt = ?
+     WHERE id = ? AND userId = ?`
+  );
+  updateStmt.run(completedMinutes, progressPercent, newStatus, input.notes || null, now, resourceId, userId);
+
+  // If completed just now and wasn't before
+  if (newStatus === "completed" && resource.status !== "completed") {
+    const cycle = await getActiveCycle(userId);
+    await awardCoins({
+      userId,
+      cycleId: cycle.id,
+      amount: 50,
+      reason: `إكمال دورة/مصدر خارجي بالكامل: ${resource.title}`,
+      referenceKey: `res_complete:${now}`,
+    });
+  }
+
+  return { success: true, progressPercent, status: newStatus };
+}
+
+export async function deleteExternalResource(userId: number, resourceId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM externalResources WHERE id = ? AND userId = ?");
+  stmt.run(resourceId, userId);
+  return { success: true };
+}
+
+export async function addResourceBookmark(
+  userId: number,
+  resourceId: number,
+  input: { timestampStr: string; title: string; note?: string }
+) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare(
+    "INSERT INTO resourceBookmarks (resourceId, userId, timestampStr, title, note, createdAt) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  stmt.run(resourceId, userId, input.timestampStr, input.title, input.note || "", Date.now());
+  return { success: true };
+}
+
+export async function deleteResourceBookmark(userId: number, bookmarkId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM resourceBookmarks WHERE id = ? AND userId = ?");
+  stmt.run(bookmarkId, userId);
+  return { success: true };
+}
+
+export async function logResourceFocusSession(
+  userId: number,
+  input: { resourceId: number; durationMinutes: number; sessionNotes?: string }
+) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+
+  const getRes = sqlite.prepare("SELECT * FROM externalResources WHERE id = ? AND userId = ?");
+  const resource: any = getRes.get(input.resourceId, userId);
+  if (!resource) throw new Error("المصدر غير موجود.");
+
+  const platform = resource.platform || "منصة خاصة";
+
+  // Insert Focus Session log
+  const insertStmt = sqlite.prepare(
+    "INSERT INTO resourceFocusSessions (resourceId, userId, durationMinutes, platform, sessionNotes, createdAt) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  insertStmt.run(input.resourceId, userId, input.durationMinutes, platform, input.sessionNotes || "", now);
+
+  // Automatically accumulate progress
+  const newCompletedMinutes = resource.completedMinutes + input.durationMinutes;
+  await updateResourceProgress(userId, input.resourceId, {
+    completedMinutes: newCompletedMinutes,
+    notes: input.sessionNotes ? `آخر جلسة: ${input.sessionNotes}` : undefined,
+  });
+
+  // Award Coins
+  const cycle = await getActiveCycle(userId);
+  const earnedCoins = Math.max(10, Math.round(input.durationMinutes * 1.5));
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: earnedCoins,
+    reason: `تسجيل جلسة تركيز للمصدر (${input.durationMinutes} دقيقة): ${resource.title}`,
+    referenceKey: `res_focus:${now}`,
+  });
+
+  return { success: true, durationMinutes: input.durationMinutes, earnedCoins };
+}
+
+export async function listResourceFocusSessions(userId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare(
+    `SELECT s.*, r.title as resourceTitle, r.subject as resourceSubject 
+     FROM resourceFocusSessions s
+     JOIN externalResources r ON s.resourceId = r.id
+     WHERE s.userId = ? 
+     ORDER BY s.createdAt DESC`
+  );
+  return stmt.all(userId);
+}
+
+export async function getSmartCalendarData(userId: number, dateStr?: string) {
+  const sqlite = getSqlite();
+
+  // 1. External Resources (Resource Bridge)
+  const resourcesStmt = sqlite.prepare("SELECT * FROM externalResources WHERE userId = ? ORDER BY updatedAt DESC");
+  const resources = resourcesStmt.all(userId);
+
+  // 2. Pending Tasks
+  const tasksStmt = sqlite.prepare("SELECT * FROM tasks WHERE userId = ? ORDER BY id DESC");
+  const tasksList = tasksStmt.all(userId);
+
+  // 3. Hybrid Lessons
+  const hybridStmt = sqlite.prepare("SELECT * FROM hybridLessons WHERE userId = ? ORDER BY id DESC");
+  const hybridLessonsList = hybridStmt.all(userId);
+
+  // 4. Focus Sessions
+  const focusSessions = sqlite.prepare(
+    `SELECT s.*, r.title as resourceTitle FROM resourceFocusSessions s JOIN externalResources r ON s.resourceId = r.id WHERE s.userId = ? ORDER BY s.createdAt DESC LIMIT 20`
+  ).all(userId);
+
+  // 5. Smart Calendar Events
+  let eventsQuery = "SELECT * FROM smartCalendarEvents WHERE userId = ?";
+  const params: any[] = [userId];
+  if (dateStr) {
+    eventsQuery += " AND eventDate = ?";
+    params.push(dateStr);
+  }
+  eventsQuery += " ORDER BY startTime ASC, id ASC";
+  const events = sqlite.prepare(eventsQuery).all(...params);
+
+  return {
+    resources,
+    tasks: tasksList,
+    hybridLessons: hybridLessonsList,
+    focusSessions,
+    events,
+  };
+}
+
+export async function addSmartCalendarEvent(
+  userId: number,
+  input: {
+    title: string;
+    category: string;
+    sourceType?: string;
+    sourceId?: number;
+    eventDate: string;
+    startTime: string;
+    durationMinutes?: number;
+    subject?: string;
+    platform?: string;
+    linkUrl?: string;
+    notes?: string;
+  }
+) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare(
+    `INSERT INTO smartCalendarEvents 
+     (userId, title, category, sourceType, sourceId, eventDate, startTime, durationMinutes, subject, platform, linkUrl, isCompleted, notes, createdAt) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+  );
+  const now = Date.now();
+  const res = stmt.run(
+    userId,
+    input.title,
+    input.category || "lesson",
+    input.sourceType || "manual",
+    input.sourceId || null,
+    input.eventDate,
+    input.startTime || "09:00",
+    input.durationMinutes || 45,
+    input.subject || "عام",
+    input.platform || "",
+    input.linkUrl || "",
+    input.notes || "",
+    now
+  );
+  return { id: Number(res.lastInsertRowid), success: true };
+}
+
+export async function toggleSmartCalendarEvent(userId: number, id: number) {
+  const sqlite = getSqlite();
+  const getStmt = sqlite.prepare("SELECT * FROM smartCalendarEvents WHERE id = ? AND userId = ?");
+  const ev: any = getStmt.get(id, userId);
+  if (!ev) throw new Error("الحدث غير موجود.");
+
+  const nextState = ev.isCompleted === 1 ? 0 : 1;
+  const updateStmt = sqlite.prepare("UPDATE smartCalendarEvents SET isCompleted = ? WHERE id = ? AND userId = ?");
+  updateStmt.run(nextState, id, userId);
+
+  return { success: true, isCompleted: nextState };
+}
+
+export async function deleteSmartCalendarEvent(userId: number, id: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare("DELETE FROM smartCalendarEvents WHERE id = ? AND userId = ?");
+  stmt.run(id, userId);
+  return { success: true };
+}
+
+export async function generateSmartCalendarRoadmapAI(
+  userId: number,
+  input: { eventDate: string; availableMinutes?: number; preferences?: string }
+) {
+  const sqlite = getSqlite();
+  const calendarData = await getSmartCalendarData(userId);
+
+  const availableHours = ((input.availableMinutes || 240) / 60).toFixed(1);
+
+  const prompt = `
+أنت المساعد التعليمي الذكي لنظام Seif Study OS.
+المطلوب: توليد خطة يومية ذكية وخارطة طريق (Daily Roadmap) متوازنة ليوم المحدد: ${input.eventDate}.
+
+المعطيات المتاحة للطالب:
+- الوقت المتاح للدراسة اليوم: ${availableHours} ساعة (${input.availableMinutes || 240} دقيقة).
+- تفضيلات الطالب: ${input.preferences || "تنسيق متوازن بين الدروس والمهام والتركيز"}.
+
+المصادر الخارجية المتوفرة (Resource Bridge):
+${JSON.stringify(
+  calendarData.resources.map((r: any) => ({
+    id: r.id,
+    title: r.title,
+    platform: r.platform,
+    subject: r.subject,
+    remainingMinutes: Math.max(0, r.totalMinutes - r.completedMinutes),
+    progressPercent: r.progressPercent,
+    url: r.url,
+  })),
+  null,
+  2
+)}
+
+المهام والتكليفات المطلوبة (Tasks):
+${JSON.stringify(
+  calendarData.tasks.filter((t: any) => !t.completed).map((t: any) => ({
+    id: t.id,
+    title: t.title,
+    subject: t.subject,
+    dueDate: t.dueDate,
+  })),
+  null,
+  2
+)}
+
+الدروس المباشرة والسناتر (Hybrid Lessons):
+${JSON.stringify(
+  calendarData.hybridLessons.map((h: any) => ({
+    id: h.id,
+    title: h.lectureTitle,
+    subject: h.subject,
+    mode: h.mode,
+    platformOrCenter: h.platformOrCenter,
+    centerTime: h.centerTime,
+  })),
+  null,
+  2
+)}
+
+قم بإنشاء خطة يومية مجدولة زمنياً تتكون من 3 إلى 6 فقرات دراسية تناسب الطاقة والوقت المتاح (${input.availableMinutes || 240} دقيقة).
+يجب أن ترجع النتيجة كـ JSON Array فقط بهذا الشكل بالضبط بدون أي نصوص خارجية:
+[
+  {
+    "title": "عنوان الفقرة أو الدرس",
+    "category": "lesson" | "task" | "focus_session" | "review" | "exam",
+    "sourceType": "resource" | "task" | "hybrid" | "manual",
+    "sourceId": number | null,
+    "startTime": "09:00" (صيغة 24 ساعة مثلاً 09:00, 11:30, 14:00, 17:00, 20:00),
+    "durationMinutes": 45,
+    "subject": "اسم المادة",
+    "platform": "اسم المنصة إن وجدت",
+    "linkUrl": "الرابط إن وجد",
+    "notes": "نصيحة أو توجيه ذكي لهذه الفقرة"
+  }
+]
+`;
+
+  try {
+    const llmRes = await invokeLLM({
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const responseText = llmRes.choices[0]?.message?.content || "";
+
+    let items: any[] = [];
+    try {
+      const parsed = JSON.parse(responseText);
+      if (Array.isArray(parsed)) items = parsed;
+      else if (parsed.items && Array.isArray(parsed.items)) items = parsed.items;
+      else if (parsed.roadmap && Array.isArray(parsed.roadmap)) items = parsed.roadmap;
+    } catch {
+      items = [];
+    }
+
+    if (items.length === 0) {
+      items = [
+        {
+          title: "مراجعة كورس Udemy البرمجي",
+          category: "lesson",
+          sourceType: "resource",
+          startTime: "09:00",
+          durationMinutes: 45,
+          subject: "برمجيات",
+          platform: "Udemy",
+          notes: "شاهد المحاضرة وطبق العملية",
+        },
+        {
+          title: "حل واجب الرياضيات الشيت الأسبوعي",
+          category: "task",
+          sourceType: "task",
+          startTime: "11:00",
+          durationMinutes: 60,
+          subject: "رياضيات",
+          notes: "ركز على الأسئلة من 1 إلى 15",
+        },
+        {
+          title: "جلسة تركيز وفلاش كاردز عميقة",
+          category: "focus_session",
+          sourceType: "manual",
+          startTime: "15:00",
+          durationMinutes: 45,
+          subject: "عام",
+          notes: "استخدم تقنية البومودورو 25x5",
+        },
+      ];
+    }
+
+    // Clear existing AI generated events for this date
+    sqlite.prepare("DELETE FROM smartCalendarEvents WHERE userId = ? AND eventDate = ? AND sourceType != 'manual'").run(userId, input.eventDate);
+
+    // Insert new events
+    const insertStmt = sqlite.prepare(
+      `INSERT INTO smartCalendarEvents 
+       (userId, title, category, sourceType, sourceId, eventDate, startTime, durationMinutes, subject, platform, linkUrl, isCompleted, notes, createdAt) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+    );
+
+    const now = Date.now();
+    for (const item of items) {
+      insertStmt.run(
+        userId,
+        item.title,
+        item.category || "lesson",
+        item.sourceType || "manual",
+        item.sourceId || null,
+        input.eventDate,
+        item.startTime || "10:00",
+        item.durationMinutes || 45,
+        item.subject || "عام",
+        item.platform || "",
+        item.linkUrl || "",
+        item.notes || "",
+        now
+      );
+    }
+
+    return { success: true, count: items.length };
+  } catch (err: any) {
+    console.error("Failed to generate AI roadmap:", err);
+    throw new Error(err.message || "فشل توليد الخطة بالذكاء الاصطناعي.");
+  }
+}
+
+/* =========================================================================
+   STUDY ROOMS (مشاركة المصادر والدورات الخارجية)
+   ========================================================================= */
+
+export async function createStudyRoom(
+  userId: number,
+  userName: string,
+  input: { name: string; description?: string; customCode?: string }
+) {
+  const sqlite = getSqlite();
+  const roomCode = (input.customCode && input.customCode.trim().length >= 3)
+    ? input.customCode.trim().toUpperCase()
+    : `ROOM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  const check = sqlite.prepare("SELECT id FROM studyRooms WHERE roomCode = ?").get(roomCode);
+  if (check) {
+    throw new Error("رمز الغرفة مستخدم بالفعل، يرجى اختيار رمز آخر.");
+  }
+
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    "INSERT INTO studyRooms (roomCode, name, description, createdByUserId, createdByName, createdAt) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  const res = stmt.run(roomCode, input.name, input.description || "", userId, userName || "سيف", now);
+  const roomId = Number(res.lastInsertRowid);
+
+  // Add creator as first member
+  sqlite.prepare("INSERT INTO studyRoomMembers (roomId, userId, userName, joinedAt) VALUES (?, ?, ?, ?)").run(roomId, userId, userName || "سيف", now);
+
+  return { roomId, roomCode, name: input.name, success: true };
+}
+
+export async function joinStudyRoom(userId: number, userName: string, roomCode: string) {
+  const sqlite = getSqlite();
+  const code = roomCode.trim().toUpperCase();
+  const room: any = sqlite.prepare("SELECT * FROM studyRooms WHERE roomCode = ?").get(code);
+  if (!room) {
+    throw new Error("الغرفة غير موجودة. يرجى التأكد من رمز الغرفة المرفق.");
+  }
+
+  const memberCheck = sqlite.prepare("SELECT id FROM studyRoomMembers WHERE roomId = ? AND userId = ?").get(room.id, userId);
+  if (!memberCheck) {
+    sqlite.prepare("INSERT INTO studyRoomMembers (roomId, userId, userName, joinedAt) VALUES (?, ?, ?, ?)").run(room.id, userId, userName || "سيف", Date.now());
+  }
+
+  return { roomId: room.id, roomCode: room.roomCode, name: room.name, success: true };
+}
+
+export async function listUserStudyRooms(userId: number) {
+  const sqlite = getSqlite();
+  const stmt = sqlite.prepare(
+    `SELECT r.*, 
+       (SELECT COUNT(*) FROM studyRoomMembers m WHERE m.roomId = r.id) as memberCount,
+       (SELECT COUNT(*) FROM studyRoomResources res WHERE res.roomId = r.id) as resourceCount
+     FROM studyRooms r
+     JOIN studyRoomMembers m ON r.id = m.roomId
+     WHERE m.userId = ?
+     ORDER BY r.createdAt DESC`
+  );
+  return stmt.all(userId);
+}
+
+export async function getStudyRoomDetails(userId: number, roomId: number) {
+  const sqlite = getSqlite();
+  const room: any = sqlite.prepare("SELECT * FROM studyRooms WHERE id = ?").get(roomId);
+  if (!room) throw new Error("الغرفة غير موجودة.");
+
+  // Check if member
+  const member = sqlite.prepare("SELECT * FROM studyRoomMembers WHERE roomId = ? AND userId = ?").get(roomId, userId);
+  if (!member) throw new Error("أنت لست عضواً في هذه الغرفة.");
+
+  const members = sqlite.prepare("SELECT * FROM studyRoomMembers WHERE roomId = ? ORDER BY joinedAt ASC").all(roomId);
+  const resources = sqlite.prepare("SELECT * FROM studyRoomResources WHERE roomId = ? ORDER BY createdAt DESC").all(roomId);
+  const progressList = sqlite.prepare("SELECT * FROM studyRoomProgress WHERE roomId = ? ORDER BY lastActiveAt DESC").all(roomId);
+
+  return {
+    room,
+    members,
+    resources,
+    progressList,
+  };
+}
+
+export async function addStudyRoomResource(
+  userId: number,
+  userName: string,
+  input: { roomId: number; title: string; platform: string; url: string; subject?: string }
+) {
+  const sqlite = getSqlite();
+  const room: any = sqlite.prepare("SELECT * FROM studyRooms WHERE id = ?").get(input.roomId);
+  if (!room) throw new Error("الغرفة غير موجودة.");
+
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    "INSERT INTO studyRoomResources (roomId, title, platform, url, subject, addedByUserId, addedByName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  );
+  const res = stmt.run(input.roomId, input.title, input.platform, input.url, input.subject || "عام", userId, userName || "سيف", now);
+  const resourceId = Number(res.lastInsertRowid);
+
+  // Initialize progress for current user
+  sqlite.prepare(
+    "INSERT OR REPLACE INTO studyRoomProgress (roomId, roomResourceId, userId, userName, progressPercent, completedMinutes, lastActiveAt) VALUES (?, ?, ?, ?, 0, 0, ?)"
+  ).run(input.roomId, resourceId, userId, userName || "سيف", now);
+
+  return { resourceId, success: true };
+}
+
+export async function updateStudyRoomProgress(
+  userId: number,
+  userName: string,
+  input: { roomId: number; roomResourceId: number; progressPercent: number; completedMinutes?: number }
+) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const stmt = sqlite.prepare(
+    `INSERT INTO studyRoomProgress (roomId, roomResourceId, userId, userName, progressPercent, completedMinutes, lastActiveAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(roomResourceId, userId) DO UPDATE SET
+       progressPercent = excluded.progressPercent,
+       completedMinutes = excluded.completedMinutes,
+       lastActiveAt = excluded.lastActiveAt`
+  );
+  stmt.run(input.roomId, input.roomResourceId, userId, userName || "سيف", input.progressPercent, input.completedMinutes || 0, now);
+  return { success: true };
+}
+
+export async function importStudyRoomResourceToBridge(userId: number, roomResourceId: number) {
+  const sqlite = getSqlite();
+  const res: any = sqlite.prepare("SELECT * FROM studyRoomResources WHERE id = ?").get(roomResourceId);
+  if (!res) throw new Error("المصدر المورد غير موجود.");
+
+  const cycle = await getActiveCycle(userId);
+  const check = sqlite.prepare("SELECT id FROM externalResources WHERE userId = ? AND url = ?").get(userId, res.url);
+  if (check) {
+    return { success: true, message: "الدورة موجودة بالفعل في قائمة جسر المصادر الخاصة بك." };
+  }
+
+  const now = Date.now();
+  const insertStmt = sqlite.prepare(
+    `INSERT INTO externalResources (userId, cycleId, title, platform, url, subject, totalMinutes, completedMinutes, progressPercent, status, notes, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, 120, 0, 0, 'in_progress', ?, ?, ?)`
+  );
+  insertStmt.run(
+    userId,
+    cycle.id,
+    res.title,
+    res.platform,
+    res.url,
+    res.subject || "عام",
+    `موردة من الغرفة الجماعية: ${res.addedByName}`,
+    now,
+    now
+  );
+
+  return { success: true, message: "تم إلحاق الدورة الخارجية بجسر المصادر الخاص بك بنجاح! 🎉" };
+}
+
+/* =========================================================================
+   PERSONALIZED NOTIFICATIONS & ANTI-PROCRASTINATION REMINDERS
+   ========================================================================= */
+
+export async function getPersonalizedNotifications(userId: number) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Fetch dismissed notification keys in the last 24 hours
+  const dayAgo = now - 24 * 3600 * 1000;
+  const dismissedRows: any[] = sqlite
+    .prepare("SELECT notificationKey FROM notificationDismissals WHERE userId = ? AND dismissedAt > ?")
+    .all(userId, dayAgo);
+  const dismissedKeys = new Set(dismissedRows.map((r) => r.notificationKey));
+
+  const notifications: Array<{
+    id: string;
+    key: string;
+    type: "calendar_lesson" | "task_deadline" | "hybrid_session" | "resource_progress" | "anti_procrastination";
+    title: string;
+    message: string;
+    urgency: "urgent" | "warning" | "info" | "motivation";
+    actionUrl: string;
+    actionText: string;
+    subject?: string;
+    timeRemainingText?: string;
+    createdAt: number;
+  }> = [];
+
+  // 1. Upcoming / Today's Calendar Events
+  const calendarEvents: any[] = sqlite
+    .prepare(
+      "SELECT * FROM smartCalendarEvents WHERE userId = ? AND isCompleted = 0 AND eventDate >= ? ORDER BY eventDate ASC, startTime ASC LIMIT 10"
+    )
+    .all(userId, todayStr);
+
+  for (const ev of calendarEvents) {
+    const key = `cal_ev:${ev.id}`;
+    if (dismissedKeys.has(key)) continue;
+
+    const isToday = ev.eventDate === todayStr;
+    const urgency = isToday ? "urgent" : "warning";
+    const timeText = isToday ? `اليوم الساعة ${ev.startTime}` : `تاريخ: ${ev.eventDate} (${ev.startTime})`;
+
+    notifications.push({
+      id: `ev-${ev.id}`,
+      key,
+      type: "calendar_lesson",
+      title: isToday ? `⚡ درس مستهدف اليوم: ${ev.title}` : `📅 درس قادم بالتقويم الذكي: ${ev.title}`,
+      message: `المادة: ${ev.subject || "عام"} | المنصة: ${ev.platform || "التقويم التعليمي"} | الموعد: ${timeText}`,
+      urgency,
+      actionUrl: "/smart-learning-calendar",
+      actionText: "فتح التقويم الذكي",
+      subject: ev.subject,
+      timeRemainingText: timeText,
+      createdAt: ev.createdAt || now,
+    });
+  }
+
+  // 2. Open Tasks & Approaching/Overdue Deadlines
+  const openTasks: any[] = sqlite
+    .prepare("SELECT * FROM tasks WHERE userId = ? AND status = 'open' ORDER BY id DESC")
+    .all(userId);
+
+  for (const task of openTasks) {
+    const key = `task:${task.id}`;
+    if (dismissedKeys.has(key)) continue;
+
+    if (task.deadline) {
+      const deadlineMs = Number(task.deadline);
+      const isOverdue = deadlineMs < now;
+      const isApproaching = !isOverdue && deadlineMs - now <= 48 * 3600 * 1000;
+
+      if (isOverdue) {
+        const daysOverdue = Math.max(1, Math.floor((now - deadlineMs) / (24 * 3600 * 1000)));
+        notifications.push({
+          id: `task-${task.id}`,
+          key,
+          type: "task_deadline",
+          title: `🚨 مهمة متأخرة! (${task.title})`,
+          message: `انتهى موعد هذه المهمة منذ ${daysOverdue} يوم. لا تترك المهام تتراكم، أنجزها الآن لمنع التسويف!`,
+          urgency: "urgent",
+          actionUrl: "/tasks",
+          actionText: "إنجاز المهمة الآن",
+          timeRemainingText: `متأخرة بـ ${daysOverdue} يوم`,
+          createdAt: task.createdAt || now,
+        });
+      } else if (isApproaching) {
+        const hoursLeft = Math.max(1, Math.round((deadlineMs - now) / (3600 * 1000)));
+        notifications.push({
+          id: `task-${task.id}`,
+          key,
+          type: "task_deadline",
+          title: `⏳ اقتراب الموعد النهائي: ${task.title}`,
+          message: `متبقي أقل من ${hoursLeft} ساعة لتسليم هذه المهمة. حان وقت التركيز لتجنب ضغط الدقائق الأخيرة!`,
+          urgency: "warning",
+          actionUrl: "/tasks",
+          actionText: "الانتقال للمهام",
+          timeRemainingText: `متبقي ${hoursLeft} ساعة`,
+          createdAt: task.createdAt || now,
+        });
+      }
+    }
+  }
+
+  // 3. Pending Hybrid Center / Online Sessions
+  const pendingHybrid: any[] = sqlite
+    .prepare("SELECT * FROM hybridLessons WHERE userId = ? AND status = 'pending' ORDER BY id DESC LIMIT 5")
+    .all(userId);
+
+  for (const h of pendingHybrid) {
+    const key = `hybrid:${h.id}`;
+    if (dismissedKeys.has(key)) continue;
+
+    notifications.push({
+      id: `hybrid-${h.id}`,
+      key,
+      type: "hybrid_session",
+      title: `🏫 حصة معلقة: ${h.lectureTitle}`,
+      message: `المعلم: ${h.teacherName} | المكان/المنصة: ${h.platformOrCenter} (${h.mode === "center" ? "سنتر" : "أونلاين"})`,
+      urgency: "info",
+      actionUrl: "/hybrid-hub",
+      actionText: "توثيق الحضور/المشاهدة",
+      subject: h.subject,
+      createdAt: h.createdAt || now,
+    });
+  }
+
+  // 4. Incomplete External Resources (Resource Bridge)
+  const activeResources: any[] = sqlite
+    .prepare(
+      "SELECT * FROM externalResources WHERE userId = ? AND progressPercent < 100 ORDER BY updatedAt DESC LIMIT 3"
+    )
+    .all(userId);
+
+  for (const r of activeResources) {
+    const key = `res:${r.id}`;
+    if (dismissedKeys.has(key)) continue;
+
+    const remainingMins = Math.max(0, r.totalMinutes - r.completedMinutes);
+    notifications.push({
+      id: `res-${r.id}`,
+      key,
+      type: "resource_progress",
+      title: `📚 كورس خارجي بانتظار استكمالك: ${r.title}`,
+      message: `المنصة: ${r.platform} | نسبة الإنجاز الحالية: ${r.progressPercent}% (متبقي ${remainingMins} دقيقة).`,
+      urgency: "info",
+      actionUrl: "/resource-bridge",
+      actionText: "بدء مؤقت التركيز",
+      subject: r.subject,
+      timeRemainingText: `متبقي ${remainingMins} دقيقة`,
+      createdAt: r.updatedAt || now,
+    });
+  }
+
+  // 5. Anti-Procrastination Motivational Nudge
+  const nudgeKey = `nudge:${todayStr}`;
+  if (!dismissedKeys.has(nudgeKey) && notifications.length > 0) {
+    notifications.push({
+      id: `nudge-${todayStr}`,
+      key: nudgeKey,
+      type: "anti_procrastination",
+      title: `💡 محارب التسويف الذكي (Anti-Procrastination)`,
+      message: `لديها أكثر من ${notifications.length} عناصر بانتظارك اليوم. جرب "قاعدة الـ 5 دقائق": ابدأ المذاكرة لمدة 5 دقائق فقط وسيتلاشى التكاسل تلقائياً!`,
+      urgency: "motivation",
+      actionUrl: "/resource-bridge",
+      actionText: "تشغيل مؤقت البومودورو",
+      createdAt: now,
+    });
+  }
+
+  return notifications;
+}
+
+export async function dismissNotification(userId: number, notificationKey: string) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  sqlite
+    .prepare(
+      "INSERT OR REPLACE INTO notificationDismissals (userId, notificationKey, dismissedAt) VALUES (?, ?, ?)"
+    )
+    .run(userId, notificationKey, now);
+  return { success: true };
+}
+
+export async function getNotificationSettings(userId: number) {
+  const sqlite = getSqlite();
+  let row: any = sqlite.prepare("SELECT * FROM notificationSettings WHERE userId = ?").get(userId);
+  if (!row) {
+    sqlite
+      .prepare(
+        "INSERT INTO notificationSettings (userId, leadMinutes, soundEnabled, browserPushEnabled, antiProcrastinationMode, updatedAt) VALUES (?, 30, 1, 0, 1, ?)"
+      )
+      .run(userId, Date.now());
+    row = {
+      userId,
+      leadMinutes: 30,
+      soundEnabled: 1,
+      browserPushEnabled: 0,
+      antiProcrastinationMode: 1,
+    };
+  }
+  return {
+    leadMinutes: row.leadMinutes,
+    soundEnabled: row.soundEnabled === 1,
+    browserPushEnabled: row.browserPushEnabled === 1,
+    antiProcrastinationMode: row.antiProcrastinationMode === 1,
+  };
+}
+
+export async function updateNotificationSettings(
+  userId: number,
+  input: {
+    leadMinutes?: number;
+    soundEnabled?: boolean;
+    browserPushEnabled?: boolean;
+    antiProcrastinationMode?: boolean;
+  }
+) {
+  const sqlite = getSqlite();
+  const current = await getNotificationSettings(userId);
+  const updatedLead = input.leadMinutes ?? current.leadMinutes;
+  const updatedSound = input.soundEnabled !== undefined ? (input.soundEnabled ? 1 : 0) : current.soundEnabled ? 1 : 0;
+  const updatedPush = input.browserPushEnabled !== undefined ? (input.browserPushEnabled ? 1 : 0) : current.browserPushEnabled ? 1 : 0;
+  const updatedAntiProc = input.antiProcrastinationMode !== undefined ? (input.antiProcrastinationMode ? 1 : 0) : current.antiProcrastinationMode ? 1 : 0;
+
+  sqlite
+    .prepare(
+      `INSERT INTO notificationSettings (userId, leadMinutes, soundEnabled, browserPushEnabled, antiProcrastinationMode, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(userId) DO UPDATE SET
+         leadMinutes = excluded.leadMinutes,
+         soundEnabled = excluded.soundEnabled,
+         browserPushEnabled = excluded.browserPushEnabled,
+         antiProcrastinationMode = excluded.antiProcrastinationMode,
+         updatedAt = excluded.updatedAt`
+    )
+    .run(userId, updatedLead, updatedSound, updatedPush, updatedAntiProc, Date.now());
+
+  return { success: true };
+}
+
+export async function generateAIProcrastinationCoachMessage(userId: number) {
+  const notifications = await getPersonalizedNotifications(userId);
+  const prompt = `
+أنت مدرب تحفيزي متخصص في محاربة التسويف الأكاديمي لنظام Seif Study OS.
+المعطيات: الطالب لديه ${notifications.length} تنبيهات دراسية ومواعيد تسليم متراكمة بالتقويم التعليمي الذكي.
+المطلوب: كتابة رسالة تشجيعية سريعة ومحفزة جداً (بسطرين فقط باللغة العربية) تدفع الطالب للبدء فوراً بأسلوب إيجابي وذكي يكسر حاجز التكاسل والتسويف.
+`;
+
+  try {
+    const res = await invokeLLM({ messages: [{ role: "user", content: prompt }] });
+    const reply = res.choices[0]?.message?.content || "البداية هي نصف الإنجاز! اختر أسهل مهمة واقضِ عليها بتركيز 10 دقائق فقط الآن. 🚀";
+    return { advice: reply.trim() };
+  } catch {
+    return { advice: "البداية هي نصف الإنجاز! اختر أسهل مهمة واقضِ عليها بتركيز 10 دقائق فقط الآن. 🚀" };
+  }
+}
+
+/* =========================================================================
+   PDF RESOURCE ENGINE (UPLOAD, OCR TEXT EXTRACTION, SEARCH & SUMMARIZATION)
+   ========================================================================= */
+
+export async function processAndAddPdfResource(
+  userId: number,
+  input: {
+    resourceId?: number;
+    fileName: string;
+    fileUrl?: string;
+    subject?: string;
+    fileBase64?: string;
+    rawText?: string;
+  }
+) {
+  const sqlite = getSqlite();
+  const now = Date.now();
+  let extractedText = input.rawText || "";
+
+  // If base64 file or URL is provided, call Gemini to extract and structure PDF text
+  if (!extractedText) {
+    try {
+      const promptText = `أنت خبير معالجة واستخراج النصوص الدراسية (PDF OCR & Text Extractor).
+المطلوب:
+1) قم بظبط وقراءة المادة الدراسية المرفقة ("${input.fileName}").
+2) استخرج كافة النصوص والشروح والمفاهيم بدقة ووضوح باللغة العربية والإنجليزية.
+3) رتب النص في فقرات منظمة تحتوي العناوين الرئيسية، المصطلحات، والقوانين المفتاحية القابلة للبحث.`;
+
+      const messages: any[] = [
+        { role: "system", content: "أنت محرك استخراج وفهرسة الكتب والملفات الدراسية بالذكاء الاصطناعي." },
+      ];
+
+      if (input.fileBase64) {
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: promptText },
+            {
+              type: "file_url",
+              file_url: {
+                url: `data:application/pdf;base64,${input.fileBase64}`,
+                mime_type: "application/pdf",
+              },
+            },
+          ],
+        });
+      } else {
+        messages.push({
+          role: "user",
+          content: `${promptText}\n\nرابط الملف أو اسمه: ${input.fileName} ${input.fileUrl || ""}`,
+        });
+      }
+
+      const llmRes = await invokeLLM({ messages });
+      extractedText = llmRes.choices[0]?.message?.content || `ملخص ونص مستخرج دراسي من ملف PDF: ${input.fileName}`;
+    } catch {
+      extractedText = `نص مستخرج دراسي لملف PDF: ${input.fileName}\nيحتوي المستند على مفاهيم المادة (${input.subject || "عام"}).`;
+    }
+  }
+
+  // Generate initial summary JSON using Gemini
+  let summaryJsonStr = "{}";
+  try {
+    const summaryPrompt = `قم بتحليل وتلخيص النص الدراسي التالي المأخوذ من ملف PDF ("${input.fileName}"):
+${extractedText.slice(0, 4000)}
+
+أعد التلخيص كـ JSON حصراً بالتنسيق التالي:
+{
+  "summary": "ملخص تنفيذي مبسط ومباشر للمستند في 3 فقرات",
+  "keyConcepts": ["مفهوم 1", "تعريف 2", "قانون 3"],
+  "takeaways": ["نقطة امتحانات هامة 1", "ملاحظة للحفظ 2"],
+  "quickQuiz": [
+    { "q": "سؤال اختبار من المستند؟", "a": "الإجابة النموذجية المباشرة" }
+  ]
+}`;
+
+    const sumRes = await invokeLLM({
+      messages: [
+        { role: "system", content: "أنت خبير تلخيص المناهج والكتب الدراسية." },
+        { role: "user", content: summaryPrompt },
+      ],
+      response_format: { type: "json_object" },
+    });
+    summaryJsonStr = sumRes.choices[0]?.message?.content || "{}";
+  } catch {
+    summaryJsonStr = JSON.stringify({
+      summary: `تلخيص شامل لمستند ${input.fileName}`,
+      keyConcepts: [input.subject || "مفهوم دراسي"],
+      takeaways: ["راجع العناوين الرئيسية بالمستند"],
+      quickQuiz: [],
+    });
+  }
+
+  const charCount = extractedText.length;
+  const insertStmt = sqlite.prepare(
+    `INSERT INTO externalResourcePdfs (resourceId, userId, fileName, fileUrl, subject, extractedText, summaryJson, characterCount, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const res = insertStmt.run(
+    input.resourceId || null,
+    userId,
+    input.fileName,
+    input.fileUrl || "",
+    input.subject || "عام",
+    extractedText,
+    summaryJsonStr,
+    charCount,
+    now
+  );
+
+  const pdfId = Number(res.lastInsertRowid);
+
+  // Award Coins for uploading PDF
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 25,
+    reason: `رفع وتحويل ملف PDF دراسي: ${input.fileName}`,
+    referenceKey: `pdf:add:${pdfId}`,
+  });
+
+  return {
+    pdfId,
+    fileName: input.fileName,
+    characterCount: charCount,
+    extractedText,
+    summaryJson: JSON.parse(summaryJsonStr),
+    success: true,
+  };
+}
+
+export async function listResourcePdfs(userId: number, resourceId?: number) {
+  const sqlite = getSqlite();
+  let rows: any[] = [];
+  if (resourceId) {
+    rows = sqlite
+      .prepare("SELECT * FROM externalResourcePdfs WHERE userId = ? AND resourceId = ? ORDER BY createdAt DESC")
+      .all(userId, resourceId);
+  } else {
+    rows = sqlite
+      .prepare("SELECT * FROM externalResourcePdfs WHERE userId = ? ORDER BY createdAt DESC")
+      .all(userId);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    summaryJson: r.summaryJson ? JSON.parse(r.summaryJson) : null,
+  }));
+}
+
+export async function searchResourcePdfs(userId: number, searchQuery: string) {
+  const sqlite = getSqlite();
+  const queryClean = searchQuery.trim().toLowerCase();
+  if (!queryClean) return [];
+
+  const rows: any[] = sqlite
+    .prepare("SELECT * FROM externalResourcePdfs WHERE userId = ? ORDER BY createdAt DESC")
+    .all(userId);
+
+  const matches: Array<{
+    id: number;
+    fileName: string;
+    subject: string;
+    snippet: string;
+    matchCount: number;
+    createdAt: number;
+  }> = [];
+
+  for (const r of rows) {
+    const textLower = (r.extractedText || "").toLowerCase();
+    const nameLower = (r.fileName || "").toLowerCase();
+    const subjLower = (r.subject || "").toLowerCase();
+
+    let count = 0;
+    let index = textLower.indexOf(queryClean);
+    while (index !== -1) {
+      count++;
+      index = textLower.indexOf(queryClean, index + queryClean.length);
+    }
+
+    if (nameLower.includes(queryClean) || subjLower.includes(queryClean) || count > 0) {
+      let snippet = "";
+      const matchIndex = textLower.indexOf(queryClean);
+      if (matchIndex !== -1) {
+        const start = Math.max(0, matchIndex - 60);
+        const end = Math.min(textLower.length, matchIndex + 100);
+        snippet = "..." + r.extractedText.slice(start, end) + "...";
+      } else {
+        snippet = (r.extractedText || "").slice(0, 150) + "...";
+      }
+
+      matches.push({
+        id: r.id,
+        fileName: r.fileName,
+        subject: r.subject,
+        snippet,
+        matchCount: Math.max(count, 1),
+        createdAt: r.createdAt,
+      });
+    }
+  }
+
+  return matches;
+}
+
+export async function summarizePdfAI(userId: number, pdfId: number, customPrompt?: string) {
+  const sqlite = getSqlite();
+  const pdf: any = sqlite
+    .prepare("SELECT * FROM externalResourcePdfs WHERE id = ? AND userId = ?")
+    .get(pdfId, userId);
+
+  if (!pdf) throw new Error("ملف الـ PDF غير موجود.");
+
+  const promptText = `أنت موجه دراسي خبير في تحليل وتلخيص كتب وتفريغات الـ PDF الدراسية.
+المحتوى الاستخراجي لملف الـ PDF ("${pdf.fileName}"):
+${pdf.extractedText.slice(0, 6000)}
+
+${customPrompt ? `طلب خاص من الطالب: ${customPrompt}` : ""}
+
+أعد ناتج التلخيص كـ JSON حصراً بهذا التنسيق:
+{
+  "summary": "تلخيص دراسي شامل ومكتمل الفهم للنص المستخرج مع التركيز على الاستيعاب العميق",
+  "keyConcepts": ["مفهوم رئيسي 1", "تعريف 2", "قانون أو صيغة 3"],
+  "takeaways": ["نقطة امتحانات مؤكدة 1", "ملاحظة تطبيقية 2"],
+  "quickQuiz": [
+    { "q": "سؤال امتحانات حول المستند؟", "a": "الإجابة النموذجية الكاملة" }
+  ]
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت خبير معالجة واستئصال الخلاصة الدراسية من الكتب والـ PDFs." },
+      { role: "user", content: promptText },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content || "{}";
+  let parsed = {};
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = { summary: raw, keyConcepts: [], takeaways: [], quickQuiz: [] };
+  }
+
+  // Update summaryJson in DB
+  sqlite
+    .prepare("UPDATE externalResourcePdfs SET summaryJson = ? WHERE id = ?")
+    .run(JSON.stringify(parsed), pdfId);
+
+  return parsed;
+}
+
+export async function deleteResourcePdf(userId: number, pdfId: number) {
+  const sqlite = getSqlite();
+  sqlite.prepare("DELETE FROM externalResourcePdfs WHERE id = ? AND userId = ?").run(pdfId, userId);
+  return { success: true };
+}
+
+/* =========================================================================
+   GOOGLE CALENDAR BI-DIRECTIONAL SYNC ENGINE
+   ========================================================================= */
+
+export async function syncToGoogleCalendar(userId: number, accessToken: string) {
+  const sqlite = getSqlite();
+  const events: any[] = sqlite
+    .prepare("SELECT * FROM smartCalendarEvents WHERE userId = ? ORDER BY eventDate ASC")
+    .all(userId);
+
+  let pushedCount = 0;
+  let updatedCount = 0;
+
+  for (const ev of events) {
+    try {
+      const timeParts = (ev.startTime || "09:00").split(":");
+      const hh = timeParts[0].padStart(2, "0");
+      const mm = (timeParts[1] || "00").padStart(2, "0");
+      const startDateTimeStr = `${ev.eventDate}T${hh}:${mm}:00`;
+      const startDateObj = new Date(startDateTimeStr);
+
+      const durationMs = (ev.durationMinutes || 45) * 60 * 1000;
+      const endDateObj = new Date(startDateObj.getTime() + durationMs);
+
+      const payload = {
+        summary: ev.title,
+        description: `${ev.notes || ""}\nالمادة: ${ev.subject || "عام"}\nتمت المزامنة تلقائياً من منصة Seif Study OS`,
+        start: {
+          dateTime: startDateObj.toISOString(),
+          timeZone: "Africa/Cairo",
+        },
+        end: {
+          dateTime: endDateObj.toISOString(),
+          timeZone: "Africa/Cairo",
+        },
+        location: ev.linkUrl || undefined,
+      };
+
+      if (ev.googleEventId) {
+        const patchRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${ev.googleEventId}`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        if (patchRes.ok) {
+          updatedCount++;
+        } else if (patchRes.status === 404) {
+          const createRes = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(payload),
+            }
+          );
+          if (createRes.ok) {
+            const data: any = await createRes.json();
+            sqlite
+              .prepare("UPDATE smartCalendarEvents SET googleEventId = ? WHERE id = ?")
+              .run(data.id, ev.id);
+            pushedCount++;
+          }
+        }
+      } else {
+        const createRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        if (createRes.ok) {
+          const data: any = await createRes.json();
+          sqlite
+            .prepare("UPDATE smartCalendarEvents SET googleEventId = ? WHERE id = ?")
+            .run(data.id, ev.id);
+          pushedCount++;
+        }
+      }
+    } catch (err) {
+      console.error("Error pushing event to Google Calendar:", err);
+    }
+  }
+
+  return { pushedCount, updatedCount };
+}
+
+export async function syncFromGoogleCalendar(userId: number, accessToken: string) {
+  const sqlite = getSqlite();
+
+  const now = new Date();
+  const past30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const gCalUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(
+    past30Days
+  )}&singleEvents=true&orderBy=startTime&maxResults=250`;
+
+  const res = await fetch(gCalUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`فشل الاتصال بـ Google Calendar API: ${res.statusText} - ${errorText}`);
+  }
+
+  const data: any = await res.json();
+  const items = data.items || [];
+
+  let importedCount = 0;
+  let updatedCount = 0;
+
+  for (const item of items) {
+    if (item.status === "cancelled") continue;
+
+    const gEventId = item.id;
+    const title = item.summary || "حدث تقويم جوجل";
+    const startObj = item.start?.dateTime || item.start?.date;
+    const endObj = item.end?.dateTime || item.end?.date;
+
+    if (!startObj) continue;
+
+    let eventDate = "";
+    let startTime = "09:00";
+    let durationMinutes = 45;
+
+    if (startObj.includes("T")) {
+      eventDate = startObj.slice(0, 10);
+      startTime = startObj.slice(11, 16);
+      if (endObj && endObj.includes("T")) {
+        const startMs = new Date(startObj).getTime();
+        const endMs = new Date(endObj).getTime();
+        const diffMin = Math.round((endMs - startMs) / 60000);
+        if (diffMin > 0) durationMinutes = diffMin;
+      }
+    } else {
+      eventDate = startObj;
+    }
+
+    const notes = item.description || "";
+    const linkUrl = item.htmlLink || "";
+
+    const existing: any = sqlite
+      .prepare("SELECT id FROM smartCalendarEvents WHERE userId = ? AND googleEventId = ?")
+      .get(userId, gEventId);
+
+    if (existing) {
+      sqlite
+        .prepare(
+          `UPDATE smartCalendarEvents 
+           SET title = ?, eventDate = ?, startTime = ?, durationMinutes = ?, notes = ?, linkUrl = ?
+           WHERE id = ? AND userId = ?`
+        )
+        .run(title, eventDate, startTime, durationMinutes, notes, linkUrl, existing.id, userId);
+      updatedCount++;
+    } else {
+      sqlite
+        .prepare(
+          `INSERT INTO smartCalendarEvents 
+           (userId, title, category, sourceType, googleEventId, eventDate, startTime, durationMinutes, subject, platform, linkUrl, isCompleted, notes, createdAt) 
+           VALUES (?, ?, 'google_calendar', 'google_calendar', ?, ?, ?, ?, 'تقويم جوجل', 'Google Calendar', ?, 0, ?, ?)`
+        )
+        .run(userId, title, gEventId, eventDate, startTime, durationMinutes, linkUrl, notes, Date.now());
+      importedCount++;
+    }
+  }
+
+  return { importedCount, updatedCount, totalGoogleEvents: items.length };
+}
+
+export async function fullGoogleCalendarBiDirectionalSync(userId: number, accessToken: string) {
+  const pushRes = await syncToGoogleCalendar(userId, accessToken);
+  const pullRes = await syncFromGoogleCalendar(userId, accessToken);
+
+  return {
+    success: true,
+    pushedCount: pushRes.pushedCount,
+    pushedUpdates: pushRes.updatedCount,
+    importedCount: pullRes.importedCount,
+    importedUpdates: pullRes.updatedCount,
+    totalGoogleEvents: pullRes.totalGoogleEvents,
+  };
+}
+
+/* =========================================================================
+   AI STUDY COACH (EGYPTIAN DIALECT PROACTIVE ANALYZER)
+   ========================================================================= */
+
+export async function getAIStudyCoachInsights(userId: number) {
+  const db = await database();
+  const cycle = await getActiveCycle(userId);
+
+  // 1. Fetch Pomodoro Data
+  const pomodoros = await db
+    .select()
+    .from(pomodoroSessions)
+    .where(and(eq(pomodoroSessions.userId, userId), eq(pomodoroSessions.cycleId, cycle.id)))
+    .orderBy(desc(pomodoroSessions.createdAt))
+    .limit(50);
+
+  const completedPomodoros = pomodoros.filter((p) => p.state === "completed");
+  const totalPomoMinutes = completedPomodoros.reduce((acc, p) => acc + p.completedMinutes, 0);
+  const totalPausedSeconds = pomodoros.reduce((acc, p) => acc + (p.pausedSeconds || 0), 0);
+  const averagePomoDuration = completedPomodoros.length
+    ? Math.round(totalPomoMinutes / completedPomodoros.length)
+    : 0;
+
+  // 2. Fetch Resource Bridge Data
+  const resourcesStmt = _sqlite.prepare(
+    "SELECT * FROM externalResources WHERE userId = ? ORDER BY updatedAt DESC LIMIT 30"
+  );
+  const resources: any[] = resourcesStmt.all(userId);
+
+  const totalResources = resources.length;
+  const completedResources = resources.filter((r) => r.progressPercent >= 100).length;
+  const avgResourceProgress = totalResources
+    ? Math.round(resources.reduce((acc, r) => acc + (r.progressPercent || 0), 0) / totalResources)
+    : 0;
+
+  const pdfsStmt = _sqlite.prepare("SELECT COUNT(*) as count FROM externalResourcePdfs WHERE userId = ?");
+  const pdfCount = (pdfsStmt.get(userId) as any)?.count || 0;
+
+  const resourceSessionsStmt = _sqlite.prepare(
+    "SELECT * FROM resourceFocusSessions WHERE userId = ? ORDER BY createdAt DESC LIMIT 20"
+  );
+  const resourceSessions: any[] = resourceSessionsStmt.all(userId);
+  const totalResourceFocusMins = resourceSessions.reduce((acc, s) => acc + (s.durationMinutes || 0), 0);
+
+  // 3. Fetch Tasks
+  const taskRows = await db
+    .select()
+    .from(tasks)
+    .where(and(eq(tasks.userId, userId), eq(tasks.cycleId, cycle.id)));
+  const completedTasks = taskRows.filter((t) => t.status === "completed").length;
+
+  // Build Context for LLM
+  const promptContext = `
+بيانات ذاكرة وتفاعل الطالب كالتالي:
+- جلسات البومودورو المكتملة: ${completedPomodoros.length} جلسة (${totalPomoMinutes} دقيقة إجمالية تركيز).
+- متوسط طول جلسة البومودورو: ${averagePomoDuration} دقيقة.
+- إجمالي وقت التوقف المؤقت (Pauses): ${Math.round(totalPausedSeconds / 60)} دقيقة.
+- عدد مصادر التعلم في Resource Bridge: ${totalResources} مصدر (المكتمل منها: ${completedResources}).
+- متوسط نسبة إنجاز المصادر: %${avgResourceProgress}.
+- جلسات التركيز المباشرة على المصادر: ${resourceSessions.length} جلسة (${totalResourceFocusMins} دقيقة).
+- عدد ملفات الـ PDF الدراسية المرفوعة: ${pdfCount} ملف.
+- المهام المكتملة: ${completedTasks} من أصل ${taskRows.length} مهام.
+
+المطلوب:
+تقمص شخصية "كوتش المذاكرة الذكي" 🤖🇪🇬 — مدرب أكاديمي مصري ذكي وشغوف، يتحدث باللهجة المصرية المبهجة والمباشرة (مثل: "عاش يا بطل!"، "بص يا سيدي"، "جامد جداً"، "خد بالك من الحتة دي").
+
+قم بالتحليل الدقيق وتقديم تقرير خبير مشجع يتضمن JSON حصراً بالشكل التالي:
+{
+  "overallRating": "بطل تركيز 🏆" (أو "محتاج ضبط بوصلة 🎯" أو "أسطورة مذاكرة ⚡"),
+  "concentrationScore": 85 (درجة من 100 للتركيز والالتزام),
+  "headline": "عاش يا بطل! أداؤك في البومودورو ممتاز جداً، لكن محتاجين نقفل المصادر المركونة في الريسورس بريدج!",
+  "pomodoroAnalysis": "تحليل مشجع باللهجة المصرية لعادات البومودورو والتوقفات",
+  "resourceBridgeAnalysis": "تحليل مشجع باللهجة المصرية لكيفية استغلاله لمصادر التعلم وفيديوهات يوتيوب والـ PDFs",
+  "topDistractionFound": "أبرز مشتت لوحظ (مثال: التوقف المتكرر في منتصف البومودورو أو تراكم المذكرات غير المكتملة)",
+  "actionableTips": [
+    "نصيحة عمليّة أولى باللهجة المصرية لتفعيل التركيز العميق",
+    "نصيحة عمليّة ثانية لتنظيم الوقت في الريسورس بريدج",
+    "نصيحة عمليّة ثالثة لزيادة استمرارية الجلسات دون توقف"
+  ],
+  "quickChallengeToday": "تحدي اليوم السريع من الكوتش (مثال: كمل 30 دقيقة بومودورو من غير ما تلمس الموبايل!)"
+}
+`;
+
+  try {
+    const llmRes = await invokeLLM({
+      messages: [
+        {
+          role: "system",
+          content:
+            "أنت كوتش المذاكرة والتركيز الذكي باللهجة المصرية (AI Egyptian Study Coach). أخرج النتيجة بترميز JSON حصراً.",
+        },
+        { role: "user", content: promptContext },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const rawJson = llmRes.choices[0]?.message?.content || "{}";
+    const parsed = JSON.parse(rawJson);
+    return {
+      statsSummary: {
+        completedPomodoros: completedPomodoros.length,
+        totalPomoMinutes,
+        totalResources,
+        pdfCount,
+        completedTasks,
+      },
+      coachReport: parsed,
+    };
+  } catch (err) {
+    console.error("AI Study Coach error:", err);
+    return {
+      statsSummary: {
+        completedPomodoros: completedPomodoros.length,
+        totalPomoMinutes,
+        totalResources,
+        pdfCount,
+        completedTasks,
+      },
+      coachReport: {
+        overallRating: "بطل تحت التدريب 🎯",
+        concentrationScore: 75,
+        headline: "عاش يا بطل! يلا نبدأ مع بعض رحلة تركيز جديدة وننظم وقتنا بين البومودورو والمصادر!",
+        pomodoroAnalysis: `أنزلت ${completedPomodoros.length} جلسة بومودورو بإجمالي ${totalPomoMinutes} دقيقة. أداء طيب وحلو جداً!`,
+        resourceBridgeAnalysis: `عندك ${totalResources} مصدر في الريسورس بريدج، جرب ترتبهم وتبدأ بالمهام العاجلة.`,
+        topDistractionFound: "التشتت والتنقل بين التطبيقات في وقت المذاكرة.",
+        actionableTips: [
+          "فعل حظر التشتت وشغل أصوات بيئية هادئة أثناء البومودورو 🎧",
+          "حدد مصدر واحد بس من الريسورس بريدج تخلصه النهاردة 📚",
+          "خد بريك 5 دقائق حقيقي بعيد عن الشاشات والموبايل ☕",
+        ],
+        quickChallengeToday: "كمل جلسة بومودورو واحدة 25 دقيقة من غير ما تفتح أي تبويب تاني!",
+      },
+    };
+  }
+}
+
+
+export async function generatePdfFlashcardsAI(
+  userId: number,
+  input: {
+    fileName: string;
+    fileBase64?: string;
+    rawText?: string;
+    subject?: string;
+    customPrompt?: string;
+  }
+) {
+  let textContent = input.rawText || "";
+
+  if (!textContent && input.fileBase64) {
+    try {
+      const messages: any[] = [
+        {
+          role: "system",
+          content:
+            "أنت خبير قراءة واستخراج النصوص التعليمية من المذكرات والكتب الدراسية بصيغة PDF. قم باستخراج أهم الأفكار والمعلومات العلمية بكل دقة.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `استخرج واقرأ المحتوى التعليمي للمستند المرفق ("${input.fileName}") بالتفصيل لمادة ${
+                input.subject || "عام"
+              }.`,
+            },
+            {
+              type: "file_url",
+              file_url: {
+                url: `data:application/pdf;base64,${input.fileBase64}`,
+                mime_type: "application/pdf",
+              },
+            },
+          ],
+        },
+      ];
+      const res = await invokeLLM({ messages });
+      textContent = res.choices[0]?.message?.content || "";
+    } catch (e) {
+      console.error("PDF Base64 Extraction error:", e);
+    }
+  }
+
+  const promptText = `أنت موجه واستشاري إعداد بطاقات التكرار المتباعد والـ Active Recall للطلاب والمذاكرة الذكية.
+المستند الدراسي: "${input.fileName}" (المادة: ${input.subject || "عام"}).
+
+محتوى المستند المعالج:
+${(textContent || input.fileName).slice(0, 8000)}
+
+${input.customPrompt ? `تعليمات إضافية من الطالب: ${input.customPrompt}` : ""}
+
+المطلوب:
+تحليل المستند واستخراج أهم 8 إلى 15 نقطة ومفهوم وقانون وسؤال متكرر وتحويلها إلى بطاقات استذكار (Flashcards) فائقة الجودة.
+
+أعد النتيجة كـ JSON حصراً بالتنسيق التالي:
+{
+  "deckTitle": "اسم المجموعة التلقائي (مثال: بطاقات مراجعة - الفصل الأول)",
+  "subject": "${input.subject || "عام"}",
+  "summary": "ملخص تنفيذي سريع في سطرين عن المحتوى",
+  "flashcards": [
+    {
+      "prompt": "السؤال / المفهوم أو الصيغة على الوجه الأول للبطاقة (Front)",
+      "answer": "الإجابة النموذجية المباشرة والمفصلة على الوجه الثاني (Back)",
+      "category": "تعريف",
+      "importance": "عالية جداً"
+    }
+  ]
+}`;
+
+  const llmRes = await invokeLLM({
+    messages: [
+      { role: "system", content: "أنت محرك توليد بطاقات استذكار دراسية احترافية بالذكاء الاصطناعي." },
+      { role: "user", content: promptText },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const rawJson = llmRes.choices[0]?.message?.content || "{}";
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    parsed = {
+      deckTitle: `بطاقات مراجعة - ${input.fileName}`,
+      subject: input.subject || "عام",
+      summary: "بطاقات استذكار تم استخراجها من ملف PDF",
+      flashcards: [
+        {
+          prompt: `ما الموضوع الرئيسي لملف ${input.fileName}؟`,
+          answer: textContent.slice(0, 200) || "محتوى دراسي مهم للمراجعة.",
+          category: "تعريف",
+          importance: "عالية جداً",
+        },
+      ],
+    };
+  }
+
+  return parsed;
+}
+
+export async function savePdfFlashcardsToDeck(
+  userId: number,
+  input: {
+    deckTitle: string;
+    description?: string;
+    cards: Array<{ prompt: string; answer: string }>;
+  }
+) {
+  const deck = await createFlashcardDeck(userId, {
+    title: input.deckTitle || "بطاقات استذكار PDF",
+    description: input.description || "تم توليدها تلقائياً بالذكاء الاصطناعي من ملف PDF دراسي.",
+    color: "#0f766e",
+  });
+
+  for (const c of input.cards) {
+    if (c.prompt && c.answer) {
+      await createFlashcard(userId, {
+        deckId: deck.id,
+        prompt: c.prompt,
+        answer: c.answer,
+      });
+    }
+  }
+
+  // Award coins
+  const cycle = await getActiveCycle(userId);
+  await awardCoins({
+    userId,
+    cycleId: cycle.id,
+    amount: 30,
+    reason: `إنشاء وحفظ مجموعة فلاش كاردز AI من PDF: ${deck.title}`,
+    referenceKey: `deck:pdf:${deck.id}`,
+  });
+
+  return { success: true, deckId: deck.id, cardCount: input.cards.length };
+}
+
+
+
+
+
+
+
+
+
+
+

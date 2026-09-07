@@ -4,17 +4,114 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader, EmptyState } from "@/components/PageHeader";
+import { PdfFlashcardDropzone } from "@/components/PdfFlashcardDropzone";
 import { errorText } from "@/lib/study";
 import { trpc } from "@/lib/trpc";
-import { Brain, CheckCircle2, Layers3, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Brain, CheckCircle2, Layers3, Plus, RefreshCw, Sparkles, Trash2, FileUp, Layers } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Flashcards() {
-  const utils = trpc.useUtils(); const { data: decks = [], isLoading } = trpc.flashcards.list.useQuery();
-  const [activeDeck, setActiveDeck] = useState<number | null>(null); const selected = decks.find(deck => deck.id === activeDeck) ?? decks[0] ?? null;
-  const refresh = () => utils.flashcards.list.invalidate();
+  const [activeTab, setActiveTab] = useState<"dropzone" | "decks">("dropzone");
+  const utils = trpc.useUtils();
+  const { data: decks = [], isLoading } = trpc.flashcards.list.useQuery();
+  const [activeDeck, setActiveDeck] = useState<number | null>(null);
+  const selected = decks.find((deck) => deck.id === activeDeck) ?? decks[0] ?? null;
+
+  const refresh = async () => {
+    await utils.flashcards.list.invalidate();
+  };
+
   if (isLoading) return <div className="h-72 animate-pulse rounded-2xl bg-muted" />;
-  return <div><PageHeader title="فلاش كاردز" description="راجع بسرعة، افتكر لوحدك، وخلّي التكرار يبني حفظك واحدة واحدة." /><DeckCreator onDone={refresh} />{!decks.length ? <EmptyState title="لسه معندكش مجموعة" description="اعمل مجموعة فلاش كاردز لمادة أو فصل، وابدأ تثبيت الحفظ بجد." /> : <div className="mt-5 grid gap-5 xl:grid-cols-[.34fr_1fr]"><aside className="space-y-3">{decks.map(deck => <button key={deck.id} onClick={() => setActiveDeck(deck.id)} className={`surface w-full p-4 text-right transition ${selected?.id === deck.id ? "ring-2 ring-primary" : "hover:-translate-y-0.5"}`}><div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl text-white" style={{ backgroundColor: deck.color }}><Layers3 className="size-5" /></span><Badge variant="secondary">{deck.stats.total} كارت</Badge></div><p className="mt-4 font-bold">{deck.title}</p><p className="mt-1 text-xs text-muted-foreground">جديد {deck.stats.new} · بتراجع {deck.stats.learning} · متقن {deck.stats.mastered}</p></button>)}</aside>{selected && <DeckWorkspace deck={selected} onDone={refresh} />}</div>}</div>;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="بطاقات الاستذكار الفعال (Flashcards)"
+        description="استخرج بطاقات المراجعة من ملفات الـ PDF بضغطة واحدة، أو راجع مجموعاتك بالتكرار المتباعد."
+      />
+
+      {/* TOP NAVIGATION TABS */}
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-muted/60 border w-fit">
+        <button
+          onClick={() => setActiveTab("dropzone")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${
+            activeTab === "dropzone"
+              ? "bg-card text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <FileUp className="size-4" />
+          <span>سحب وإفلات PDF للتحويل الذكي</span>
+          <Badge variant="secondary" className="bg-primary/10 text-primary text-[10px]">
+            AI Powered
+          </Badge>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("decks")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${
+            activeTab === "decks"
+              ? "bg-card text-primary shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Layers className="size-4" />
+          <span>مجموعاتي وسجل المراجعة ({decks.length})</span>
+        </button>
+      </div>
+
+      {activeTab === "dropzone" ? (
+        <div className="space-y-6">
+          <PdfFlashcardDropzone
+            onDeckSaved={() => {
+              setActiveTab("decks");
+              refresh();
+            }}
+          />
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <DeckCreator onDone={refresh} />
+          {!decks.length ? (
+            <EmptyState
+              title="لسه معندكش مجموعة"
+              description="اسحب ملف PDF فوق لتحويله تلقائياً أو اعمل مجموعة فلاش كاردز لمادة أو فصل يدوياً."
+            />
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-[.34fr_1fr]">
+              <aside className="space-y-3">
+                {decks.map((deck) => (
+                  <button
+                    key={deck.id}
+                    onClick={() => setActiveDeck(deck.id)}
+                    className={`surface w-full p-4 text-right transition rounded-2xl border ${
+                      selected?.id === deck.id ? "ring-2 ring-primary border-primary/50" : "hover:-translate-y-0.5"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <span
+                        className="flex size-10 items-center justify-center rounded-xl text-white shadow-sm"
+                        style={{ backgroundColor: deck.color || "#0f766e" }}
+                      >
+                        <Layers3 className="size-5" />
+                      </span>
+                      <Badge variant="secondary">{deck.stats.total} كارت</Badge>
+                    </div>
+                    <p className="mt-3 font-bold text-sm text-foreground">{deck.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      جديد {deck.stats.new} · بتراجع {deck.stats.learning} · متقن {deck.stats.mastered}
+                    </p>
+                  </button>
+                ))}
+              </aside>
+
+              {selected && <DeckWorkspace deck={selected} onDone={refresh} />}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DeckCreator({ onDone }: { onDone: () => Promise<unknown> }) { const [title, setTitle] = useState(""), [description, setDescription] = useState(""); const mutation = trpc.flashcards.createDeck.useMutation({ onSuccess: async () => { setTitle(""); setDescription(""); toast.success("المجموعة جاهزة، يلا حط أول كارت."); await onDone(); }, onError: e => toast.error(errorText(e)) }); return <div className="surface mt-5 flex flex-col gap-3 p-4 md:flex-row"><Input value={title} onChange={e => setTitle(e.target.value)} placeholder="اسم المجموعة: أحياء الفصل الأول" /><Input value={description} onChange={e => setDescription(e.target.value)} placeholder="وصف اختياري" /><Button disabled={!title.trim() || mutation.isPending} onClick={() => mutation.mutate({ title: title.trim(), description: description.trim() || undefined })}><Plus />مجموعة جديدة</Button></div>; }

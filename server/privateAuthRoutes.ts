@@ -1,6 +1,16 @@
 import type { Express } from "express";
 import { getUserByOpenId, upsertUser } from "./db";
-import { createPrivateSession, PRIVATE_SESSION_COOKIE, privateOwnerEmail, privateOwnerOpenId, readPrivateSession, validPrivateCredentials } from "./privateAuth";
+import {
+  createPrivateSession,
+  generateAndStoreOtp,
+  sendOtpEmail,
+  verifyOtp,
+  PRIVATE_SESSION_COOKIE,
+  privateOwnerEmail,
+  privateOwnerOpenId,
+  readPrivateSession,
+  validPrivateCredentials,
+} from "./privateAuth";
 
 function cookieOptions(req: Parameters<Express["post"]>[1] extends (req: infer R, ...args: any[]) => any ? R : never) {
   const secure = req.protocol === "https" || req.headers["x-forwarded-proto"] === "https";
@@ -13,17 +23,86 @@ async function ensurePrivateOwner() {
 }
 
 export function registerPrivateAuthRoutes(app: Express) {
-  app.post("/api/private-auth/sign-in", async (req, res) => {
+  // Step 1: Verify Password and Generate OTP + Dispatch Email
+  app.post("/api/private-auth/request-otp", async (req, res) => {
     const { email, password } = req.body as { email?: string; password?: string };
     if (typeof email !== "string" || typeof password !== "string" || !validPrivateCredentials(email, password)) {
-      res.status(401).json({ success: false, message: "بيانات الدخول غير صحيحة." });
+      res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة." });
       return;
     }
-    const user = await ensurePrivateOwner();
-    if (!user) { res.status(500).json({ success: false, message: "تعذّر تجهيز الحساب الخاص." }); return; }
-    res.cookie(PRIVATE_SESSION_COOKIE, await createPrivateSession(), cookieOptions(req));
-    res.json({ success: true, email: user.email });
+    const recipient = email || privateOwnerEmail;
+    const { otpId, code } = generateAndStoreOtp(recipient);
+    const emailPreview = await sendOtpEmail(recipient, code);
+
+    res.json({
+      success: true,
+      requiresOtp: true,
+      otpId,
+      emailPreview,
+      message: emailPreview.sentRealEmail
+        ? `تم إرسال رمز الأمان إلى بريدك الإلكتروني (${recipient}) بنجاح! ✉️`
+        : `تم إرسال إشعار البريد الإلكتروني الخاص برمز الأمان (OTP) إلى ${recipient} 📩`,
+    });
   });
+
+  // Step 2: Verify OTP and Grant Session
+  app.post("/api/private-auth/verify-otp", async (req, res) => {
+    const { otpId, otpCode } = req.body as { otpId?: string; otpCode?: string };
+    if (!otpId || !otpCode || !verifyOtp(otpId, otpCode)) {
+      res.status(401).json({ success: false, message: "رمز التحقق OTP غير صحيح أو انتهت صلاحيته." });
+      return;
+    }
+
+    const user = await ensurePrivateOwner();
+    if (!user) {
+      res.status(500).json({ success: false, message: "تعذّر تجهيز الحساب الخاص." });
+      return;
+    }
+
+    const token = await createPrivateSession();
+    res.cookie(PRIVATE_SESSION_COOKIE, token, cookieOptions(req));
+    res.json({ success: true, email: user.email, token, message: "تم التحقق وتسجيل الدخول بنجاح." });
+  });
+
+  // Fallback sign-in endpoint
+  app.post("/api/private-auth/sign-in", async (req, res) => {
+    const { email, password, otpId, otpCode } = req.body as { email?: string; password?: string; otpId?: string; otpCode?: string };
+
+    // If OTP is provided, verify it directly
+    if (otpId && otpCode) {
+      if (!verifyOtp(otpId, otpCode)) {
+        res.status(401).json({ success: false, message: "رمز التحقق OTP غير صحيح أو انتهت صلاحيته." });
+        return;
+      }
+      const user = await ensurePrivateOwner();
+      if (!user) { res.status(500).json({ success: false, message: "تعذّر تجهيز الحساب الخاص." }); return; }
+      const token = await createPrivateSession();
+      res.cookie(PRIVATE_SESSION_COOKIE, token, cookieOptions(req));
+      res.json({ success: true, email: user.email, token });
+      return;
+    }
+
+    // Otherwise, check credentials and issue OTP
+    if (typeof email !== "string" || typeof password !== "string" || !validPrivateCredentials(email, password)) {
+      res.status(401).json({ success: false, message: "كلمة المرور غير صحيحة." });
+      return;
+    }
+
+    const recipient = email || privateOwnerEmail;
+    const { otpId: newOtpId, code } = generateAndStoreOtp(recipient);
+    const emailPreview = await sendOtpEmail(recipient, code);
+
+    res.json({
+      success: true,
+      requiresOtp: true,
+      otpId: newOtpId,
+      emailPreview,
+      message: emailPreview.sentRealEmail
+        ? `تم إرسال رمز الأمان إلى بريدك الإلكتروني (${recipient}) بنجاح! ✉️`
+        : `تم تجهيز إشعار البريد الإلكتروني إلى ${recipient} 📩`,
+    });
+  });
+
 
   app.post("/api/private-auth/firebase-login", async (req, res) => {
     try {
@@ -51,7 +130,7 @@ export function registerPrivateAuthRoutes(app: Express) {
   });
 
   app.get("/api/private-auth/session", async (req, res) => {
-    const signedIn = Boolean(await readPrivateSession(req.headers.cookie));
+    const signedIn = Boolean(await readPrivateSession(req));
     res.status(signedIn ? 200 : 401).json({ authenticated: signedIn, email: signedIn ? privateOwnerEmail : null });
   });
 

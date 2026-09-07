@@ -32,8 +32,8 @@ class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
     console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable."
+      console.log(
+        "[OAuth] OAUTH_SERVER_URL is not configured. Local credentials/private authentication active."
       );
     }
   }
@@ -154,7 +154,7 @@ class SDKServer {
   }
 
   private getSessionSecret() {
-    const secret = ENV.cookieSecret;
+    const secret = ENV.cookieSecret || "seif-study-os-jwt-cookie-secret-key-2026";
     return new TextEncoder().encode(secret);
   }
 
@@ -200,7 +200,6 @@ class SDKServer {
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
     if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
       return null;
     }
 
@@ -216,7 +215,6 @@ class SDKServer {
         !isNonEmptyString(appId) ||
         !isNonEmptyString(name)
       ) {
-        console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
@@ -225,8 +223,7 @@ class SDKServer {
         appId,
         name,
       };
-    } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+    } catch {
       return null;
     }
   }

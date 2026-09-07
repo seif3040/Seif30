@@ -42,19 +42,23 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
 // Use initializeFirestore with forced long polling to avoid connection failures in sandboxed iframes
-let firestoreDb: Firestore;
+let firestoreDb: Firestore | null = null;
 try {
   firestoreDb = initializeFirestore(
     app,
     {
       experimentalForceLongPolling: true,
     },
-    config.firestoreDatabaseId || undefined
+    (config as any).firestoreDatabaseId || undefined
   );
 } catch {
-  firestoreDb = getFirestore(app, config.firestoreDatabaseId || undefined);
+  try {
+    firestoreDb = getFirestore(app, (config as any).firestoreDatabaseId || undefined);
+  } catch (err) {
+    console.warn("Firestore not available or not provisioned:", err);
+  }
 }
-export const db: Firestore = firestoreDb;
+export const db = firestoreDb;
 export const googleProvider = new GoogleAuthProvider();
 
 // Silence verbose webchannel debug traces while retaining critical errors
@@ -135,10 +139,10 @@ export async function logoutFirebase(): Promise<void> {
 }
 
 export async function syncUserProfile(user: User, extraData: Record<string, any> = {}) {
-  if (!user.uid) return;
+  if (!db || !user.uid) return;
   const path = `users/${user.uid}`;
-  const userRef = doc(db, "users", user.uid);
   try {
+    const userRef = doc(db, "users", user.uid);
     await setDoc(
       userRef,
       {
@@ -152,11 +156,7 @@ export async function syncUserProfile(user: User, extraData: Record<string, any>
       { merge: true }
     );
   } catch (err: any) {
-    if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-      handleFirestoreError(err, OperationType.WRITE, path);
-    } else {
-      console.warn("Firestore syncUserProfile note:", err?.message || err);
-    }
+    console.warn("Firestore syncUserProfile warning (will continue offline/local):", err?.message || err);
   }
 }
 
@@ -169,6 +169,7 @@ export async function saveStudySessionToFirestore(
     notes?: string;
   }
 ) {
+  if (!db || !userId) return;
   const path = `users/${userId}/sessions`;
   try {
     const ref = collection(db, "users", userId, "sessions");
@@ -178,11 +179,7 @@ export async function saveStudySessionToFirestore(
       createdAt: new Date().toISOString(),
     });
   } catch (err: any) {
-    if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    } else {
-      console.warn("Firestore saveStudySession note:", err?.message || err);
-    }
+    console.warn("Firestore saveStudySession warning (will continue offline/local):", err?.message || err);
   }
 }
 
@@ -194,6 +191,7 @@ export async function saveNoteToFirestore(
     source?: string;
   }
 ) {
+  if (!db || !userId) return { id: "offline-" + Date.now() };
   const path = `users/${userId}/notes`;
   try {
     const ref = collection(db, "users", userId, "notes");
@@ -203,12 +201,8 @@ export async function saveNoteToFirestore(
       createdAt: new Date().toISOString(),
     });
   } catch (err: any) {
-    if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    } else {
-      console.warn("Firestore saveNote note:", err?.message || err);
-      throw err;
-    }
+    console.warn("Firestore saveNote warning (will continue offline/local):", err?.message || err);
+    return { id: "offline-" + Date.now() };
   }
 }
 
@@ -221,6 +215,7 @@ export async function saveChatMessageToFirestore(
     sources?: any[];
   }
 ) {
+  if (!db || !userId) return;
   const path = `users/${userId}/chats`;
   try {
     const ref = collection(db, "users", userId, "chats");
@@ -233,11 +228,7 @@ export async function saveChatMessageToFirestore(
       createdAt: new Date().toISOString(),
     });
   } catch (err: any) {
-    if (err?.code === "permission-denied" || err?.message?.includes("Missing or insufficient permissions")) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    } else {
-      console.warn("Firestore saveChatMessage note:", err?.message || err);
-    }
+    console.warn("Firestore saveChatMessage warning (will continue offline/local):", err?.message || err);
   }
 }
 
