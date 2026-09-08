@@ -44,9 +44,11 @@ export function useAuth(options?: UseAuthOptions) {
         await fetch("/api/private-auth/sign-out", { method: "POST" });
       } catch {}
       try {
+        localStorage.removeItem("seif_local_auth_user");
         localStorage.removeItem("seif_private_token");
         sessionStorage.removeItem("seif_private_token");
         sessionStorage.removeItem("manus-cookie");
+        localStorage.removeItem("manus-runtime-user-info");
       } catch {}
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
@@ -55,15 +57,29 @@ export function useAuth(options?: UseAuthOptions) {
   }, [logoutMutation, utils]);
 
   const state = useMemo(() => {
-    localStorage.setItem(
-      "manus-runtime-user-info",
-      JSON.stringify(meQuery.data)
-    );
+    let currentUser = meQuery.data ?? null;
+    if (!currentUser) {
+      try {
+        const local = localStorage.getItem("seif_local_auth_user");
+        if (local) {
+          currentUser = JSON.parse(local);
+        } else {
+          const raw = localStorage.getItem("manus-runtime-user-info");
+          if (raw && raw !== "null" && raw !== "undefined") {
+            currentUser = JSON.parse(raw);
+          }
+        }
+      } catch {}
+    } else {
+      try {
+        localStorage.setItem("manus-runtime-user-info", JSON.stringify(currentUser));
+      } catch {}
+    }
     return {
-      user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      user: currentUser,
+      loading: meQuery.isLoading && !currentUser,
       error: meQuery.error ?? logoutMutation.error ?? null,
-      isAuthenticated: Boolean(meQuery.data),
+      isAuthenticated: Boolean(currentUser),
     };
   }, [
     meQuery.data,
