@@ -90,7 +90,7 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "revision": "a506a45eb7c507e67cd663dd4a32a242"
   }, {
     "url": "index.html",
-    "revision": "4cee4524b6a340f0754e2740678bd6d5"
+    "revision": "e57eb73b97cf3ce765e4955142be701e"
   }, {
     "url": "icon.svg",
     "revision": "9a9fb3f8d509f5559f6a5c208509d748"
@@ -102,6 +102,9 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "revision": null
   }, {
     "url": "assets/index-D0DdENmp.js",
+    "revision": null
+  }, {
+    "url": "assets/index-CrgUQqaZ.js",
     "revision": null
   }, {
     "url": "assets/index-BclHvy6y.js",
