@@ -40,11 +40,21 @@ const firebaseConfig = {
 // Check if any required config is missing to avoid white page crash
 const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
 
-if (!isConfigValid) {
-  console.error("Firebase configuration is missing! Make sure to set VITE_FIREBASE_ environment variables.");
+let app;
+try {
+  if (isConfigValid) {
+    app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  } else {
+    console.error("Firebase configuration is missing! Web app will not function correctly. Please set VITE_FIREBASE_ variables in VibeHost settings.");
+    // Initialize with empty config to prevent top-level crashes, or handle as needed
+    app = getApps().length > 0 ? getApp() : initializeApp({ ...firebaseConfig, apiKey: "MISSING", projectId: "MISSING" });
+  }
+} catch (error) {
+  console.error("Firebase initialization failed:", error);
+  app = getApps().length > 0 ? getApp() : initializeApp({ ...firebaseConfig, apiKey: "MISSING", projectId: "MISSING" });
 }
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+export { app };
 export const auth = getAuth(app);
 
 // Use initializeFirestore with forced long polling to avoid connection failures in sandboxed iframes
