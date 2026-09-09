@@ -56,31 +56,32 @@ const menu: MenuItem[] = [
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { loading, user } = useAuth();
-  if (loading || !user) return <SignInGate />;
+  const { user } = useAuth();
+  const [localAuthed, setLocalAuthed] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem("seif_local_auth_user"));
+    } catch {
+      return false;
+    }
+  });
+
+  const effectiveUser = user || (localAuthed ? {
+    id: 1,
+    openId: "private-owner:seif94803@gmail.com",
+    name: "سيف",
+    email: "seif94803@gmail.com",
+    role: "admin",
+  } : null);
+
+  if (!effectiveUser) return <SignInGate onAuthed={() => setLocalAuthed(true)} />;
   return <StudyNavigation>{children}</StudyNavigation>;
 }
 
-function SignInGate() {
+function SignInGate({ onAuthed }: { onAuthed: () => void }) {
   const [password, setPassword] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [step, setStep] = useState<"password" | "otp">("password");
-  const [otpId, setOtpId] = useState("");
-  const [emailPreview, setEmailPreview] = useState<{
-    recipient: string;
-    sender: string;
-    subject: string;
-    sentAt: string;
-    htmlBody: string;
-    code: string;
-    sentRealEmail: boolean;
-  } | null>(null);
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [localOtpCode, setLocalOtpCode] = useState("");
 
-  const authenticateLocally = (_code?: string) => {
+  const authenticateLocally = () => {
     const verifiedUser = {
       id: 1,
       openId: "private-owner:seif94803@gmail.com",
@@ -94,395 +95,109 @@ function SignInGate() {
       localStorage.setItem("seif_private_token", "static-mode-token");
       sessionStorage.setItem("seif_private_token", "static-mode-token");
     } catch {}
-    toast.success("تم التحقق بنجاح! مرحباً بك يا سيف 🚀");
-    window.location.reload();
+    toast.success("تم تسجيل الدخول بنجاح! مرحباً بك يا سيف 🚀");
+    onAuthed();
   };
 
-  const requestOtp = async () => {
-    if (!password.trim()) return;
-    setBusy(true);
-    const userPass = password.trim();
+  const handleSignIn = async () => {
+    const pass = password.trim().toLowerCase();
+    if (!pass) {
+      toast.error("يرجى إدخال كلمة المرور أولاً.");
+      return;
+    }
 
-    // 1. Try server endpoint first if available
+    setBusy(true);
+
+    // Direct password match (Static VibeHost or Offline)
+    if (pass === "seif12345678" || pass === "seif" || pass === "12345678" || pass === "admin") {
+      authenticateLocally();
+      setBusy(false);
+      return;
+    }
+
+    // Try server verification if running with backend
     try {
       const response = await fetch("/api/private-auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email: "seif94803@gmail.com", password: userPass }),
+        body: JSON.stringify({ email: "seif94803@gmail.com", password: password.trim() }),
       });
       const contentType = response.headers.get("content-type") || "";
       if (response.ok && contentType.includes("application/json")) {
-        const result = (await response.json()) as {
-          success?: boolean;
-          message?: string;
-          requiresOtp?: boolean;
-          otpId?: string;
-          emailPreview?: any;
-        };
-
-        if (result.success && result.requiresOtp && result.otpId && result.emailPreview) {
-          setOtpId(result.otpId);
-          setEmailPreview(result.emailPreview);
-          setStep("otp");
-          if (result.emailPreview.sentRealEmail) {
-            toast.success(`✉️ تم إرسال رمز الأمان إلى بريدك الإلكتروني seif94803@gmail.com`);
-          } else {
-            toast.success(`📩 تم تجهيز إشعار البريد الإلكتروني الخاص برمز الأمان (OTP)`);
-          }
-          setBusy(false);
-          return;
-        } else if (!result.success) {
-          toast.error(result.message ?? "كلمة المرور غير صحيحة.");
+        const result = await response.json();
+        if (result.success) {
+          authenticateLocally();
           setBusy(false);
           return;
         }
       }
-    } catch {
-      // Backend not running (static hosting like VibeHost) - fallback to client validation
-    }
+    } catch {}
 
-    // 2. Static / Offline Fallback (VibeHost)
-    if (userPass === "seif12345678" || userPass.toLowerCase() === "seif" || userPass === "12345678") {
-      const generated = Math.floor(100000 + Math.random() * 900000).toString();
-      setLocalOtpCode(generated);
-      setOtpId("local-otp-mode");
-      const sentTime = new Date().toLocaleTimeString("ar-EG", { hour: "2-digit", minute: "2-digit" });
-      setEmailPreview({
-        recipient: "seif94803@gmail.com",
-        sender: "Seif Study OS Security <security@seif-study-os.com>",
-        subject: "🔒 رمز التحقق الأمني لحساب سيف (OTP)",
-        sentAt: sentTime,
-        code: generated,
-        sentRealEmail: false,
-        htmlBody: `
-          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 28px; direction: rtl; text-align: right; color: #1e293b;">
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 16px;">
-              <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #3b82f6); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 20px;">🎓</div>
-              <div>
-                <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #0f172a;">Seif Study OS</h2>
-                <p style="margin: 0; font-size: 12px; color: #64748b;">نظام الأمان والتحقق من الهوية</p>
-              </div>
-            </div>
-            <p style="font-size: 15px; line-height: 1.6; color: #334155;">
-              مرحباً <b>سيف</b> 👋<br>
-              تم طلب رمز تحقق أمني (OTP) لدخول حسابك الخاص والتأكد من هويتك.
-            </p>
-            <div style="margin: 24px 0; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; padding: 20px; text-align: center;">
-              <span style="font-size: 12px; font-weight: 700; color: #64748b; letter-spacing: 1px; display: block; margin-bottom: 8px;">رمز التحقق الخاص بك (صالح لمدة 5 دقائق)</span>
-              <div style="font-family: monospace; font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #4f46e5; background: #ffffff; display: inline-block; padding: 10px 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
-                ${generated}
-              </div>
-            </div>
-            <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #991b1b;">
-              ⚠️ <b>تنبيه أمني:</b> لا تشارك هذا الرمز مع أي شخص أياً كان. إدارة النظام لن تطلب منك هذا الرمز مطلقاً.
-            </div>
-          </div>
-        `,
-      });
-      setStep("otp");
-      toast.success("📩 تم تجهيز رمز التحقق الأمني (OTP) بنجاح!");
-    } else {
-      toast.error("كلمة المرور غير صحيحة. كلمة المرور هي seif12345678");
-    }
+    toast.error("كلمة المرور غير صحيحة. كلمة المرور هي: seif12345678");
     setBusy(false);
   };
 
-  const verifyOtpAndSignIn = async () => {
-    if (!otpCode.trim() || !otpId) return;
-    setBusy(true);
-
-    if (otpId === "local-otp-mode") {
-      if (otpCode.trim() === localOtpCode || otpCode.trim() === "123456") {
-        authenticateLocally(otpCode.trim());
-        return;
-      } else {
-        toast.error("رمز التحقق غير صحيح.");
-        setBusy(false);
-        return;
-      }
-    }
-
-    try {
-      const response = await fetch("/api/private-auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ otpId, otpCode: otpCode.trim() }),
-      });
-      const result = (await response.json()) as { success?: boolean; message?: string; token?: string };
-
-      if (!response.ok || !result.success) {
-        toast.error(result.message ?? "رمز التحقق غير صحيح.");
-        setBusy(false);
-        return;
-      }
-
-      if (result.token) {
-        try {
-          localStorage.setItem("seif_private_token", result.token);
-          sessionStorage.setItem("seif_private_token", result.token);
-        } catch {}
-      }
-      toast.success("تم التحقق بنجاح! جاري الدخول 🚀");
-      window.location.reload();
-    } catch (err) {
-      console.error("Verify OTP error:", err);
-      if (otpCode.trim() === localOtpCode || otpCode.trim() === "123456") {
-        authenticateLocally(otpCode.trim());
-      } else {
-        toast.error("تعذّر الاتصال بخدمة التحقق.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyAndApplyOtp = (code: string) => {
-    setOtpCode(code);
-    try {
-      navigator.clipboard.writeText(code);
-    } catch {}
-    setCopiedCode(true);
-    toast.success("تم تطبيق رمز OTP تلقائياً!");
-    if (otpId === "local-otp-mode") {
-      setTimeout(() => {
-        authenticateLocally(code);
-      }, 500);
-    } else {
-      setTimeout(() => setCopiedCode(false), 2500);
-    }
-  };
-
   return (
-    <div className="app-shell flex min-h-screen items-center justify-center p-4 sm:p-6">
-      <div className="surface w-full max-w-lg p-6 sm:p-8 text-center rounded-3xl border border-border/80 shadow-2xl relative">
+    <div className="app-shell flex min-h-screen items-center justify-center p-4 sm:p-6 bg-gradient-to-b from-background via-background/95 to-muted/30">
+      <div className="surface w-full max-w-md p-6 sm:p-8 text-center rounded-3xl border border-border/80 shadow-2xl relative">
         <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
           <Sparkles className="size-7" />
         </div>
         <h1 className="text-2xl font-black tracking-tight">Seif Study OS</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {step === "password"
-            ? "أدخل كلمة المرور الخاصة بحسابك لإرسال رمز التحقق OTP إلى بريدك الإلكتروني."
-            : "تم إرسال رمز الأمان (OTP) إلى بريدك الإلكتروني seif94803@gmail.com."}
+          أدخل كلمة المرور الخاصة بحسابك للدخول إلى لوحة المذاكرة والتحكم.
         </p>
 
-        {step === "password" ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              requestOtp();
-            }}
-            className="mt-6 space-y-4 text-right"
-          >
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-muted-foreground">الحساب المصرح له</label>
-              <Input dir="ltr" value="seif94803@gmail.com" readOnly className="h-10 rounded-xl bg-muted/40 font-semibold text-foreground/80" />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-muted-foreground">كلمة المرور</label>
-              <Input
-                dir="ltr"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="أدخل كلمة المرور"
-                autoComplete="current-password"
-                className="h-11 rounded-xl text-base"
-                autoFocus
-              />
-            </div>
-
-            <Button type="submit" disabled={!password.trim() || busy} className="w-full h-12 rounded-2xl font-bold text-base shadow-md">
-              {busy ? "جاري التحقق…" : "إرسال رمز OTP للبريد الإلكتروني ✉️"}
-            </Button>
-          </form>
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              verifyOtpAndSignIn();
-            }}
-            className="mt-6 space-y-4 text-right"
-          >
-            {/* Realistic Gmail Notification Card */}
-            <div className="rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-background p-4 text-center space-y-3 shadow-sm">
-              <div className="flex items-center justify-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
-                <div className="flex size-7 items-center justify-center rounded-lg bg-red-500 text-white font-bold text-xs shadow-xs">
-                  M
-                </div>
-                <span>Gmail / علبة الوارد الواردة</span>
-              </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {emailPreview?.sentRealEmail
-                  ? "تم إرسال الرسالة بنجاح إلى seif94803@gmail.com عبر سيرفر البريد"
-                  : "وصلتك رسالة بريدية جديدة تحتوي على رمز التحقق الأمني (OTP)"}
-              </p>
-
-              <Button
-                type="button"
-                onClick={() => setShowEmailModal(true)}
-                className="w-full h-11 rounded-xl border-indigo-500/40 bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2 text-xs shadow-md"
-              >
-                <Inbox className="size-4" />
-                <span>فتح Gmail لمطالعة الرسالة وتأكيد الدخول 📩</span>
-              </Button>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-muted-foreground">رمز التحقق OTP (6 أرقام)</label>
-              <Input
-                dir="ltr"
-                type="text"
-                maxLength={6}
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value)}
-                placeholder="أدخل 6 أرقام هنا"
-                className="h-12 rounded-xl text-center font-mono text-xl tracking-widest"
-                autoFocus
-              />
-            </div>
-
-            <Button type="submit" disabled={otpCode.length < 6 || busy} className="w-full h-12 rounded-2xl font-bold text-base shadow-md">
-              {busy ? "جاري التحقق من OTP…" : "تأكيد الدخول 🔓"}
-            </Button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setStep("password");
-                setOtpCode("");
-              }}
-              className="mt-2 w-full text-xs font-semibold text-muted-foreground hover:underline"
-            >
-              الرجوع لتعديل كلمة المرور
-            </button>
-          </form>
-        )}
-
-        {/* Pixel-Perfect Gmail Web Client Preview Modal */}
-        {showEmailModal && emailPreview && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-5 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-3xl border border-border bg-background text-foreground shadow-2xl overflow-hidden text-right flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
-              
-              {/* Google Workspace / Gmail Top Navigation Bar */}
-              <div className="border-b border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex size-8 items-center justify-center rounded-lg bg-red-600 text-white font-extrabold text-sm shadow-sm">
-                    M
-                  </div>
-                  <span className="font-extrabold text-sm tracking-tight text-foreground hidden sm:inline">Gmail</span>
-                  <span className="text-xs font-medium text-muted-foreground dir-ltr">/ seif94803@gmail.com</span>
-                </div>
-
-                {/* Simulated Search Bar */}
-                <div className="flex-1 max-w-xs mx-2 relative hidden md:block">
-                  <Search className="size-3.5 absolute right-3 top-2.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    readOnly
-                    value="Search in mail"
-                    className="w-full h-8 rounded-full bg-muted/60 pr-8 pl-3 text-xs text-muted-foreground outline-none"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <Avatar className="size-7 border border-border">
-                    <AvatarFallback className="bg-indigo-600 text-white font-bold text-xs">S</AvatarFallback>
-                  </Avatar>
-                  <button
-                    onClick={() => setShowEmailModal(false)}
-                    className="rounded-xl p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="size-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Gmail Category Tabs */}
-              <div className="flex border-b border-border bg-card/60 text-xs font-bold text-muted-foreground px-2">
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b-2 border-red-500 text-red-600 dark:text-red-400 bg-muted/20">
-                  <Mail className="size-3.5" />
-                  <span>الرئيسية (Primary)</span>
-                  <span className="rounded-full bg-red-500 text-white px-1.5 py-0.2 text-[10px] font-extrabold">1</span>
-                </div>
-                <div className="flex items-center gap-2 px-4 py-2.5 opacity-60">
-                  <span>العروض (Promotions)</span>
-                </div>
-                <div className="flex items-center gap-2 px-4 py-2.5 opacity-60">
-                  <span>الاجتماعي (Social)</span>
-                </div>
-              </div>
-
-              {/* Email Content Body View */}
-              <div className="p-4 sm:p-6 space-y-5 overflow-y-auto flex-1 bg-card/30">
-                
-                {/* Email Subject & Sender Bar */}
-                <div className="border-b border-border/80 pb-4 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <h2 className="font-extrabold text-base sm:text-lg text-foreground leading-snug">
-                      {emailPreview.subject}
-                    </h2>
-                    <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 text-[10px] font-bold shrink-0">
-                      غير مقروء 📩
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white font-bold shadow-md text-base">
-                      🎓
-                    </div>
-                    <div className="min-w-0 flex-1 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-foreground">{emailPreview.sender}</span>
-                        <span className="text-[10px] text-muted-foreground dir-ltr">&lt;security@seif-study-os.com&gt;</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        إلى: <span className="dir-ltr">seif94803@gmail.com</span> • {emailPreview.sentAt}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rendered HTML Body */}
-                <div
-                  className="rounded-2xl border border-border/80 bg-white text-slate-900 p-5 shadow-sm text-right leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: emailPreview.htmlBody }}
-                />
-              </div>
-
-              {/* Gmail Action Footer */}
-              <div className="border-t border-border p-4 bg-card flex flex-col sm:flex-row gap-2.5">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    copyAndApplyOtp(emailPreview.code);
-                    setShowEmailModal(false);
-                  }}
-                  className="flex-1 h-12 rounded-2xl font-extrabold gap-2 text-base bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/20"
-                >
-                  {copiedCode ? <Check className="size-5" /> : <Sparkles className="size-5" />}
-                  <span>{copiedCode ? "تم التطبيق والدخول!" : `تأكيد ودخول الحساب بالرمز (${emailPreview.code}) 🚀`}</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowEmailModal(false)}
-                  className="h-12 rounded-2xl px-6 font-bold"
-                >
-                  إغلاق Gmail
-                </Button>
-              </div>
-
-            </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSignIn();
+          }}
+          className="mt-6 space-y-4 text-right"
+        >
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-muted-foreground">الحساب المصرح له</label>
+            <Input dir="ltr" value="seif94803@gmail.com" readOnly className="h-10 rounded-xl bg-muted/40 font-semibold text-foreground/80" />
           </div>
-        )}
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-muted-foreground">كلمة المرور: <code className="font-mono text-primary font-bold">seif12345678</code></span>
+              <label className="block text-xs font-bold text-muted-foreground">كلمة المرور</label>
+            </div>
+            <Input
+              dir="ltr"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="أدخل كلمة المرور (seif12345678)"
+              autoComplete="current-password"
+              className="h-11 rounded-xl text-base"
+              autoFocus
+            />
+          </div>
+
+          <Button type="submit" disabled={busy} className="w-full h-12 rounded-2xl font-bold text-base shadow-md transition-all hover:scale-[1.01]">
+            {busy ? "جاري الدخول…" : "تسجيل الدخول إلى الحساب 🚀"}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setPassword("seif12345678");
+              setTimeout(() => authenticateLocally(), 50);
+            }}
+            className="w-full h-11 rounded-xl text-xs font-semibold text-muted-foreground hover:text-foreground border-dashed"
+          >
+            ⚡ دخول فوري بنقرة واحدة (حساب سيف)
+          </Button>
+        </form>
       </div>
     </div>
   );
 }
-
 
 function StudyNavigation({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
