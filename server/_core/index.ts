@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { registerPrivateAuthRoutes } from "../privateAuthRoutes";
 import { registerGeminiRoutes } from "../geminiService";
 import { registerMigrationRoutes } from "../migrationRoutes";
+import { registerBackupRoutes, startAutomatedBackupScheduler } from "../backupService";
 import { mustUseProvidedPort } from "./serverPort";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -43,6 +44,8 @@ async function startServer() {
   registerPrivateAuthRoutes(app);
   registerGeminiRoutes(app, server);
   registerMigrationRoutes(app);
+  registerBackupRoutes(app);
+  startAutomatedBackupScheduler();
   // tRPC API
   app.use(
     "/api/trpc",

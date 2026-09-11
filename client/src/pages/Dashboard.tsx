@@ -1,12 +1,15 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { PageHeader, EmptyState } from "@/components/PageHeader";
 import { DashboardCustomizer } from "@/components/DashboardCustomizer";
 import { AIStudyCoach } from "@/components/AIStudyCoach";
+import { BackupSafetyWidget } from "@/components/BackupSafetyWidget";
 import { arabicDate, money, minutesLabel } from "@/lib/study";
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, BookOpen, CalendarRange, CheckCircle2, CircleDollarSign, Clock3, Flame, GraduationCap, ListChecks, Play, Sparkles, Target, Timer, Trophy, Video } from "lucide-react";
+import { saveLocalVaultSnapshot } from "@/lib/offlineStorage";
+import { ArrowLeft, BookOpen, CalendarRange, CheckCircle2, CircleDollarSign, Clock3, Flame, GraduationCap, ListChecks, Play, RefreshCw, Sparkles, Target, Timer, Trophy, Video } from "lucide-react";
 import { useLocation } from "wouter";
 
 const stats = [
@@ -17,24 +20,70 @@ const stats = [
 ] as const;
 
 export default function Dashboard() {
-  const { data, isLoading } = trpc.dashboard.summary.useQuery();
+  const { data: serverData, isLoading, isError, refetch } = trpc.dashboard.summary.useQuery(undefined, {
+    retry: 2,
+    refetchOnWindowFocus: false,
+  });
   const { data: challenge } = trpc.dailyChallenge.get.useQuery();
   const [, navigate] = useLocation();
 
-  if (isLoading)
+  const [cachedData, setCachedData] = useState(() => {
+    try {
+      const saved = localStorage.getItem("vault_dashboard_summary");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.data || null;
+      }
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    if (serverData) {
+      setCachedData(serverData);
+      saveLocalVaultSnapshot("dashboard_summary", serverData);
+    }
+  }, [serverData]);
+
+  const data = serverData || cachedData;
+
+  if (isLoading && !data)
     return (
-      <div className="grid gap-4 md:grid-cols-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-32 animate-pulse rounded-2xl bg-muted" />
-        ))}
+      <div className="space-y-6">
+        <PageHeader eyebrow="يومك الدراسي" title="صباح الفل يا سيف! 🚀" description="جاري تحضير بياناتك وموادك..." />
+        <div className="grid gap-4 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-32 animate-pulse rounded-3xl bg-muted/60" />
+          ))}
+        </div>
       </div>
     );
-  if (!data) return <EmptyState title="مش عارفين نحمّل بيانات المذاكرة دلوقتي" description="جرّب تاني كمان لحظة." />;
+
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="يومك الدراسي" title="صباح الفل يا سيف! 🚀" description={arabicDate.format(new Date())} />
+        <BackupSafetyWidget />
+        <div className="surface p-8 text-center rounded-3xl border border-border/80 space-y-4">
+          <p className="text-base font-bold text-foreground">تعذّر تحميل بيانات المذاكرة من الخادم حالياً</p>
+          <p className="text-sm text-muted-foreground">تأكد من تسجيل الدخول بواسطة رمز الأمان (OTP) أو اضغط لإعادة المحاولة.</p>
+          <Button onClick={() => refetch()} className="rounded-xl font-bold gap-2">
+            <RefreshCw className="size-4" />
+            <span>إعادة تحميل لوحة المذاكرة</span>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const { metrics, coins } = data;
 
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="يومك الدراسي" title="صباح الفل يا سيف! 🚀" description={arabicDate.format(new Date())} />
+
+      {/* Automated 6-Hour Backup & Google Drive Safety Shield */}
+      <BackupSafetyWidget />
 
       {/* Daily Challenge Banner */}
       {challenge && (

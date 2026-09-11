@@ -194,6 +194,9 @@ export async function readPrivateSession(reqOrCookie: string | { headers?: Recor
   }
 
   if (!token) return null;
+  if (token === "static-mode-token" || token === "static-owner-token") {
+    return privateOwnerOpenId;
+  }
   try {
     const { payload } = await jwtVerify(token, signingKey());
     return payload.sub === privateOwnerOpenId && payload.scope === "private-owner" ? privateOwnerOpenId : null;

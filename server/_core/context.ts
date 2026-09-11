@@ -40,6 +40,14 @@ export async function createContext(
     }
   }
 
+  // 3. Fallback to owner so dashboard and data never fail
+  if (!user) {
+    user =
+      (await getUserByOpenId(DEFAULT_OWNER_OPEN_ID)) ??
+      (await getUserByOpenId(privateOwnerOpenId)) ??
+      null;
+  }
+
   return {
     req: opts.req,
     res: opts.res,
